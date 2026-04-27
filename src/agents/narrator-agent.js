@@ -15,11 +15,11 @@ export class NarratorAgent {
    * Generate explanations for the full playlist using Gemini + MusicBrainz context.
    * @param {Array}  scoredPlaylist
    * @param {object} tasteState
-   * @param {object} sliders
+   * @param {string} sessionIntent
    * @param {object} context - PipelineContext for inter-agent communication
    * @returns {Promise<{ playlistSummary, trackExplanations: Map }>}
    */
-  async generate(scoredPlaylist, tasteState, sliders, context = null) {
+  async generate(scoredPlaylist, tasteState, sessionIntent, context = null) {
     if (!scoredPlaylist || scoredPlaylist.length === 0) {
       return {
         playlistSummary: 'No tracks to explain.',
@@ -62,7 +62,7 @@ Current user taste (Calibrated via Active Learning):
 - Acoustic Vibe: ${((tasteState.audioProfile?.avgEnergy || 0.5)*100).toFixed(0)}% Energy
 ${anchoredArtist ? `- North Star: ${anchoredArtist} is the user's confirmed #1. Reference their sound when explaining why tracks fit.` : ''}
 
-Session intent: Discovery=${sliders.discovery?.toFixed(2)}, Energy=${sliders.energy?.toFixed(2)}.
+Session intent: "${sessionIntent}"
 ${skippedGenres.length > 0 ? `Note: The user skipped ${skippedGenres.join(', ')} tracks earlier. If you kept one anyway, explain why it's different.` : ''}
 ${underExplored.length > 0 ? `Note: Tracks in ${underExplored.join(', ')} are there to expand the user's taste map into areas they haven't explored much yet. Frame these as discoveries.` : ''}
 

@@ -26,11 +26,11 @@ export class Orchestrator {
   /**
    * Run the full playlist generation pipeline.
    * @param {string} userId
-   * @param {object} sliders
+   * @param {string} sessionIntent
    * @returns {PipelineContext}
    */
-  async generatePlaylist(userId, sliders) {
-    const context = PipelineContext.create(userId, sliders);
+  async generatePlaylist(userId, sessionIntent) {
+    const context = PipelineContext.create(userId, sessionIntent);
 
     // --- Stage 1: Profiler ---
     this._reportStatus('profiler');
@@ -44,7 +44,7 @@ export class Orchestrator {
     this._reportStatus('scout');
     context.validateForStage('scout');
     context.candidatePool = await this.scout.findCandidates(
-      context.tasteState, context.sliders, context
+      context.tasteState, context.sessionIntent, context
     );
 
     // --- Stage 3: Curator — reads full context for LLM prompt enrichment ---
@@ -53,7 +53,7 @@ export class Orchestrator {
     context.scoredPlaylist = await this.curator.rankAndSelect(
       context.tasteState,
       context.candidatePool,
-      context.sliders,
+      context.sessionIntent,
       context.sessionAdjustments,
       context
     );
@@ -63,7 +63,7 @@ export class Orchestrator {
     context.explanations = await this.narrator.generate(
       context.scoredPlaylist,
       context.tasteState,
-      context.sliders,
+      context.sessionIntent,
       context
     );
 
@@ -88,7 +88,7 @@ export class Orchestrator {
     this._lastContext.scoredPlaylist = await this.curator.rankAndSelect(
       this._lastContext.tasteState,
       this._lastContext.candidatePool,
-      this._lastContext.sliders,
+      this._lastContext.sessionIntent,
       this._lastContext.sessionAdjustments
     );
 
@@ -96,7 +96,7 @@ export class Orchestrator {
     this._lastContext.explanations = await this.narrator.generate(
       this._lastContext.scoredPlaylist,
       this._lastContext.tasteState,
-      this._lastContext.sliders
+      this._lastContext.sessionIntent
     );
 
     this._reportStatus('narrator', true);
@@ -109,8 +109,9 @@ export class Orchestrator {
   async handleConciergeAction(action) {
     switch (action.type) {
       case 'adjust_sliders':
+        // Legacy action, convert to intent override
         if (this._lastContext) {
-          Object.assign(this._lastContext.sliders, action.sliders);
+          this._lastContext.sessionIntent = "User requested a slight vibe adjustment.";
           return this.rerank();
         }
         break;
@@ -135,23 +136,14 @@ export class Orchestrator {
         if (this._lastContext) {
           return this.generatePlaylist(
             this._lastContext.userId,
-            this._lastContext.sliders
+            this._lastContext.sessionIntent
           );
         }
         break;
 
       case 'create_playlist':
-        // Generate a new playlist with the requested theme
-        // Default sliders based on the theme (could be enhanced with LLM parsing later)
-        const newSliders = {
-          discovery: action.theme.toLowerCase().includes('new') || action.theme.toLowerCase().includes('indie') ? 0.8 : 0.5,
-          energy: action.theme.toLowerCase().includes('workout') || action.theme.toLowerCase().includes('heavy') ? 0.9 : 0.5,
-          popularity: action.theme.toLowerCase().includes('underground') ? 0.8 : 0.5,
-          focus: 0.5,
-          novelty: 0.5,
-        };
-        // Trigger a full pipeline run
-        return this.generatePlaylist(this._lastContext?.userId || 'default_user', newSliders);
+        // Generate a new playlist using the explicit natural language theme
+        return this.generatePlaylist(this._lastContext?.userId || 'default_user', action.theme);
 
       case 'adjust_preference':
         // Explicitly update Elo ratings to boost or banish an artist

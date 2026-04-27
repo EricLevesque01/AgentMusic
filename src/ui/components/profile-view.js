@@ -18,6 +18,22 @@ export class ProfileView {
       </div>
     `;
 
+    try {
+      await this._renderProfile();
+    } catch (err) {
+      console.error('Profile render failed:', err);
+      this.container.innerHTML = `
+        <div class="glass-card" style="padding: var(--space-8); text-align: center;">
+          <div style="font-size: 2.5rem; margin-bottom: var(--space-4);">⚠️</div>
+          <p style="color: var(--text-primary); font-weight: var(--font-weight-medium);">Could not load your full profile</p>
+          <p style="color: var(--text-muted); font-size: var(--font-size-sm); margin-top: var(--space-2);">This may be caused by a Spotify connection issue. Your Taste Game data is safe.</p>
+          <button class="btn btn-primary" style="margin-top: var(--space-4);" onclick="location.hash='#/game'">Play Taste Game</button>
+        </div>
+      `;
+    }
+  }
+
+  async _renderProfile() {
     const profiler = new ProfilerAgent();
     const tasteState = await profiler.buildTasteState();
 
@@ -145,6 +161,12 @@ export class ProfileView {
     const totalComparisons = rankedArtists.reduce((sum, a) => sum + (a.comparison_count || 0), 0);
     const gameDiscoveries = rankedArtists.filter(a => a.source === 'game' || a.source === 'search_inject');
     const maxElo = rankedArtists[0]?.rating || 1500;
+
+    // Elo distribution stats
+    const ratings = rankedArtists.map(a => a.rating);
+    const mean = ratings.reduce((s, r) => s + r, 0) / Math.max(ratings.length, 1);
+    const variance = ratings.reduce((s, r) => s + (r - mean) ** 2, 0) / Math.max(ratings.length, 1);
+    const stdDev = Math.sqrt(variance);
 
     // Taste Tiers (Mapped to the 1-10 visual rating scale)
     const peakElo = Math.max(maxElo, 1550);

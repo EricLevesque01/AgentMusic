@@ -2,14 +2,14 @@
  * TasteGraph — Scout Agent
  * "What's Out There" — Discovers candidate tracks by traversing the music graph.
  *
- * Perceives: TasteState (Elo rankings, top genres), slider values
- * Decides:   How many hops to take based on Discovery slider
+ * Perceives: TasteState (Elo rankings, top genres), session intent
+ * Decides:   How many hops to take based on the session's exploration level
  * Acts:      Builds a CandidatePool with source annotations
  *
- * Hop depth:
- *   Discovery < 0.3 → Hop-0 only (user's own top artists)
- *   Discovery 0.3–0.7 → Hop-0 + Hop-1 (Last.fm similar artists)
- *   Discovery > 0.7 → Hop-0 + Hop-1 + Hop-2 (deep exploration)
+ * Hop depth is determined by semantic intent analysis:
+ *   Familiar/safe vibes → Hop-0 only (user's own top artists)
+ *   Moderate exploration → Hop-0 + Hop-1 (Last.fm similar artists)
+ *   Adventurous/discover → Hop-0 + Hop-1 + Hop-2 (deep exploration)
  */
 import { getSimilarArtists, getArtistTags } from '../data/lastfm-api.js';
 import { getArtistTopTracks, getRecommendations, searchTrack } from '../data/spotify-api.js';
@@ -19,13 +19,12 @@ export class ScoutAgent {
   /**
    * Main entry point. Build a candidate pool from the user's taste graph.
    * @param {object} tasteState - From ProfilerAgent
-   * @param {object} sliders    - Current session intent values
+   * @param {string} sessionIntent - Natural language session vibe
    * @param {object} context    - PipelineContext for inter-agent communication
    * @returns {Array} CandidatePool
    */
-  async findCandidates(tasteState, sliders, context = null) {
-    const discovery = sliders.discovery ?? 0.5;
-    const hopDepth  = this.determineHopDepth(discovery);
+  async findCandidates(tasteState, sessionIntent, context = null) {
+    const hopDepth  = this.determineHopDepth(sessionIntent);
 
     const { artists, eloRatings } = tasteState;
 
@@ -65,7 +64,7 @@ export class ScoutAgent {
 
     // --- Local Database: Semantic & Acoustic Matches ---
     // Query our new Python Local API (running on port 8000)
-    await this._addLocalDatabaseTracks(tasteState, sliders, candidatePool, seenTrackIds);
+    await this._addLocalDatabaseTracks(tasteState, sessionIntent, candidatePool, seenTrackIds);
 
     // Enrich all candidates with Last.fm tags
     await this._enrichWithTags(candidatePool);
@@ -90,12 +89,13 @@ export class ScoutAgent {
   }
 
   /**
-   * Determine hop depth from Discovery slider.
+   * Determine hop depth from natural language session intent.
    */
-  determineHopDepth(discovery) {
-    if (discovery < 0.3) return 0;
-    if (discovery < 0.7) return 1;
-    return 2;
+  determineHopDepth(sessionIntent) {
+    const intent = (sessionIntent || '').toLowerCase();
+    if (intent.includes('familiar') || intent.includes('favorite') || intent.includes('only my')) return 0;
+    if (intent.includes('new') || intent.includes('discover') || intent.includes('underground') || intent.includes('adventurous')) return 2;
+    return 1;
   }
 
   // --- Private: Hop 0 ---
@@ -214,7 +214,7 @@ export class ScoutAgent {
   }
 
   // --- Private: Query Local Python API ---
-  async _addLocalDatabaseTracks(tasteState, sliders, pool, seen) {
+  async _addLocalDatabaseTracks(tasteState, sessionIntent, pool, seen) {
     try {
       // 1. Fetch tracks with deep audio features
       const res = await fetch('http://127.0.0.1:8000/tracks?limit=20');

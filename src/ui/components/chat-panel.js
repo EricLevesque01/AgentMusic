@@ -6,11 +6,11 @@
 import { ConciergeAgent } from '../../agents/concierge-agent.js';
 
 const SUGGESTIONS = [
-  'More jazz and less pop',
-  'Make it more chill',
-  'I want something adventurous',
-  'Why this playlist?',
+  'What\'s my vibe?',
+  'Make me a late night playlist',
+  'Suggest artists like my favorites',
   'More underground tracks',
+  'Who are my top artists?',
 ];
 
 export class ChatPanel {
@@ -224,8 +224,19 @@ export class ChatPanel {
           this.profiler = new ProfilerAgent();
         }
         const tasteState = await this.profiler.buildTasteState();
-        context = { tasteState, sliders: {} };
+        context = { tasteState };
       }
+
+      // Enrich context with live Elo leaderboard for taste-aware responses
+      const { DataStore } = await import('../../data/data-store.js');
+      const eloRatings = DataStore.getEloRatings();
+      const ranked = Object.entries(eloRatings)
+        .filter(([, d]) => d.name && d.name !== 'undefined' && (d.comparison_count || 0) > 0)
+        .sort((a, b) => b[1].rating - a[1].rating);
+      
+      if (!context.tasteState) context.tasteState = {};
+      context.tasteState.topRankedArtists = ranked.slice(0, 10).map(([id, d]) => ({ id, name: d.name, rating: d.rating, genres: d.genres || [] }));
+      context.tasteState.totalRatedArtists = ranked.length;
 
       const { reply, actions } = await this.concierge.chat(text, context);
 
@@ -247,7 +258,7 @@ export class ChatPanel {
       messagesEl.insertAdjacentHTML('beforeend', this._botBubble(displayReply));
 
       // Dispatch actionable events
-      const actionableTypes = ['adjust_sliders', 'boost_genre', 'penalize_genre', 'regenerate', 'create_playlist', 'adjust_preference'];
+      const actionableTypes = ['boost_genre', 'penalize_genre', 'regenerate', 'create_playlist', 'adjust_preference'];
       for (const action of actions) {
         if (action.type === 'remember_fact') {
           window.dispatchEvent(new CustomEvent('tastegraph:remember-fact', { detail: action.fact }));

@@ -5,17 +5,11 @@
  */
 
 export class PipelineContext {
-  constructor({ userId, sliders, sessionId }) {
+  constructor({ userId, sessionIntent, sessionId }) {
     // --- Inputs (set by Orchestrator) ---
     this.userId = userId;
     this.sessionId = sessionId;
-    this.sliders = {
-      discovery:   sliders?.discovery   ?? 0.5,
-      popularity:  sliders?.popularity  ?? 0.5,
-      focus:       sliders?.focus       ?? 0.5,
-      energy:      sliders?.energy      ?? 0.5,
-      novelty:     sliders?.novelty     ?? 0.5,
-    };
+    this.sessionIntent = sessionIntent || "A balanced mix of my top S-Tier artists and some similar discoveries.";
 
     // --- Profiler output ---
     this.tasteState = null;
@@ -70,35 +64,12 @@ export class PipelineContext {
   /**
    * Factory method for creating a new context.
    */
-  static create(userId, sliders = {}, sessionId = null) {
+  static create(userId, sessionIntent = "", sessionId = null) {
     return new PipelineContext({
       userId,
-      sliders,
+      sessionIntent,
       sessionId: sessionId || `session_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
     });
-  }
-
-  /**
-   * Derive scoring weights from slider positions.
-   * Weights always sum to 1.0.
-   */
-  deriveWeights() {
-    const d = this.sliders.discovery; // 0 = familiar, 1 = adventurous
-
-    // Base weights shift with Discovery slider
-    let wElo     = 0.35 * (1 - d) + 0.10 * d;  // high discovery → less Elo weight
-    let wSession = 0.25;                          // session match stays stable
-    let wGraph   = 0.10 * (1 - d) + 0.40 * d;   // high discovery → more graph weight
-    let wAudio   = 0.30 * (1 - d) + 0.25 * d;   // slight decrease with discovery
-
-    // Normalize to sum to 1.0
-    const total = wElo + wSession + wGraph + wAudio;
-    return {
-      W_elo:     wElo / total,
-      W_session: wSession / total,
-      W_graph:   wGraph / total,
-      W_audio:   wAudio / total,
-    };
   }
 
   /**

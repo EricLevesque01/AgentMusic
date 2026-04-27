@@ -128,16 +128,10 @@ const KEYWORD_MAP = [
   { pattern: /more (jazz|rock|pop|indie|hip.?hop|metal|electronic|classical|blues|country)/i, action: (m) => ({ type: 'boost_genre', genre: m[1] }) },
   { pattern: /less (jazz|rock|pop|indie|hip.?hop|metal|electronic|classical|blues|country)/i, action: (m) => ({ type: 'penalize_genre', genre: m[1] }) },
   { pattern: /no (jazz|rock|pop|indie|hip.?hop|metal|electronic|classical|blues|country)/i,   action: (m) => ({ type: 'penalize_genre', genre: m[1] }) },
-  // adjust_sliders: args are flat slider keys (matches Gemini's function schema)
-  { pattern: /more (chill|calm|mellow|relaxed|slow)/i,  action: () => ({ type: 'adjust_sliders', energy: 0.2 }) },
-  { pattern: /more (energy|hype|upbeat|fast|intense)/i, action: () => ({ type: 'adjust_sliders', energy: 0.85 }) },
-  { pattern: /adventur|discover|explore|new/i,          action: () => ({ type: 'adjust_sliders', discovery: 0.85 }) },
-  { pattern: /familiar|comfort|safe|known/i,            action: () => ({ type: 'adjust_sliders', discovery: 0.15 }) },
-  { pattern: /underground|obscure|niche/i,              action: () => ({ type: 'adjust_sliders', popularity: 0.85 }) },
-  { pattern: /mainstream|popular|hits/i,                action: () => ({ type: 'adjust_sliders', popularity: 0.15 }) },
   { pattern: /why.*(track|song|this)/i,                 action: () => ({ type: 'explain_playlist' }) },
   { pattern: /regenerate|restart|new playlist/i,        action: () => ({ type: 'regenerate' }) },
   { pattern: /suggest.*(?:like)?\s(.*)/i,               action: (m) => ({ type: 'suggest_artists', artists: [m[1].split(' ')[0]] }) },
+  { pattern: /(vibe|mood|chill|hype)/i,                 action: (m) => ({ type: 'create_playlist', theme: "a " + m[1] + " mix" }) },
 ];
 
 export class ConciergeAgent {
@@ -223,37 +217,45 @@ export class ConciergeAgent {
     const sTier    = (context?.tasteState?.tasteTiers?.coreIdentity || []).join(', ') || 'None';
     const aTier    = (context?.tasteState?.tasteTiers?.activeObsessions || []).join(', ') || 'None';
     const fTier    = (context?.tasteState?.tasteTiers?.activelyDismissed || []).join(', ') || 'None';
-    const sliders  = context?.sliders || {};
     const trackCount = context?.scoredPlaylist?.length || 0;
+    
+    // Live leaderboard from Elo ratings
+    const topArtists = context?.tasteState?.topRankedArtists || [];
+    const leaderboard = topArtists.length > 0
+      ? topArtists.map((a, i) => `${i + 1}. ${a.name} (Elo: ${a.rating}, Genres: ${(a.genres || []).slice(0, 2).join(', ') || 'uncategorized'})`).join('\n')
+      : 'No rated artists yet.';
+    const totalRated = context?.tasteState?.totalRatedArtists || 0;
 
-    return `You are TasteGraph's Concierge, the natural language interface for a multi-agent music ecosystem.
+    return `You are Agent Music's Concierge — a conversational music companion who knows the user's taste deeply.
 
 YOUR KNOWLEDGE OF THE SYSTEM:
-You are part of a team of 3 agents. 
-1. You (The Concierge) handle chat, parsing user intent into tools.
-2. The Narrator Agent writes the psychological "Sonic Dossier" on the Profile tab using Wikipedia RAG.
-3. The Curator Agent builds the actual playlists using MusicBrainz/Last.fm tools.
+You are part of a team of specialized agents:
+1. You (The Concierge) handle chat, parsing user intent into actions.
+2. The Narrator Agent writes the psychological "Sonic Dossier" on the Profile tab.
+3. The Curator Agent builds playlists using MusicBrainz/Last.fm/Spotify tools.
+4. The Taste Game calibrates preferences through A/B comparisons.
 If the user asks how the app works, explain this architecture.
 
-USER'S CURRENT TASTE PROFILE: 
+USER'S LIVE TASTE LEADERBOARD (${totalRated} artists rated):
+${leaderboard}
+
+TASTE TIERS: 
 - Core Identity (S-Tier): ${sTier}
 - Active Obsessions (A-Tier): ${aTier}
 - Actively Disliked (F-Tier): ${fTier}
 - Top Genres: ${genres}
 
-SESSION STATE:
-Sliders: Discovery=${sliders.discovery?.toFixed(2)}, Energy=${sliders.energy?.toFixed(2)}, Popularity=${sliders.popularity?.toFixed(2)}.
-Playlist Length: ${trackCount} tracks.
+${trackCount > 0 ? `CURRENT PLAYLIST: ${trackCount} tracks loaded.` : 'No playlist currently loaded.'}
 
 Your job is to understand what the user wants and call the appropriate function(s).
-If a user asks for artist recommendations (e.g., "suggest some bands like The Midnight"), you MUST use the suggest_artists function to inject them into the game pool.
-If a function is not needed (e.g. general chat or explaining the app), reply conversationally in 1-2 sentences. Always be brief, warm, and music-focused.`;
+If a user asks about their taste, top artists, or vibe — use the leaderboard data above to answer directly. You know their music taste like a close friend.
+If a user asks for artist recommendations, use suggest_artists to inject them into the game pool.
+Always be brief, warm, and music-focused. Reply in 1-3 sentences max.`;
   }
 
   _parseAction(functionCall) {
     const { name, args } = functionCall;
     switch (name) {
-      case 'adjust_sliders':   return { type: 'adjust_sliders', sliders: args };
       case 'boost_genre':      return { type: 'boost_genre',    genre:   args.genre };
       case 'penalize_genre':   return { type: 'penalize_genre', genre:   args.genre };
       case 'explain_track':    return { type: 'explain_track',  trackName: args.trackName };
@@ -280,7 +282,6 @@ If a function is not needed (e.g. general chat or explaining the app), reply con
     switch (action.type) {
       case 'boost_genre':      return `Got it — boosting ${action.genre} in your playlist! 🎵`;
       case 'penalize_genre':   return `Sure — reducing ${action.genre} from the mix.`;
-      case 'adjust_sliders':   return `Adjusting your vibe settings now — regenerating playlist!`;
       case 'explain_playlist': return `Let me explain your playlist...`;
       case 'suggest_artists':  return `Suggesting new artists for you to evaluate!`;
       case 'regenerate':       return `Regenerating your playlist from scratch!`;
@@ -294,7 +295,6 @@ If a function is not needed (e.g. general chat or explaining the app), reply con
     if (actions.length === 0) return "Got it!";
     const first = actions[0];
     switch (first.type) {
-      case 'adjust_sliders':   return `Adjusting your session sliders and refreshing the playlist! 🎛️`;
       case 'boost_genre':      return `Boosting **${first.genre}** — refreshing your playlist! 🎵`;
       case 'penalize_genre':   return `Reducing **${first.genre}** from the mix and re-ranking! ✂️`;
       case 'explain_playlist': return `Here's a summary of your playlist...`;

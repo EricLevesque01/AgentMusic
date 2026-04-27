@@ -14,7 +14,7 @@ export class PlaylistView {
     if (!scoredPlaylist || scoredPlaylist.length === 0) {
       this.container.innerHTML = `
         <div class="glass-card" style="padding: var(--space-8); text-align: center;">
-          <p style="color: var(--text-muted);">No tracks found. Try broadening your Discovery slider.</p>
+          <p style="color: var(--text-muted);">No tracks found. Try a broader vibe description.</p>
         </div>
       `;
       return;

@@ -16,7 +16,7 @@ export class CuratorAgent {
    * Main entry point for the Agentic Curator.
    * Runs a ReAct loop with Gemini to dynamically research and assemble a playlist.
    */
-  async rankAndSelect(tasteState, candidatePool, sliders, sessionAdjustments = {}, context = null) {
+  async rankAndSelect(tasteState, candidatePool, sessionIntent, sessionAdjustments = {}, context = null) {
     const playlist = [];
     const MAX_TRACKS = 10;
     
@@ -56,8 +56,8 @@ EXPLICIT PREFERENCES (Permanent Rules):
 - Concierge Memories (Facts to obey): ${(tasteState.explicitPreferences?.agent_memories || []).join(', ') || 'None'}
 
 CURRENT SESSION INTENT:
-- Discovery: ${sliders.discovery || tasteState.sessionDefaults?.adventurousness || 0.5} (higher = deeper cuts)
-- Focus: ${sliders.focus || tasteState.sessionDefaults?.cohesion || 0.5} (higher = tighter sonic similarity)
+"${sessionIntent}"
+
 ${skippedGenres.length > 0 ? `- SESSION FEEDBACK: The user skipped multiple ${skippedGenres.join(', ')} tracks this session. Deprioritize these genres.` : ''}
 ${underExplored.length > 0 ? `- TASTE GAPS TO FILL: The user hasn't rated much in these genres: ${underExplored.join(', ')}. Try to include 1-2 tracks from these areas if quality candidates exist.` : ''}
 
@@ -129,17 +129,23 @@ CRITICAL RULES:
     let messages = [{ role: 'user', parts: [{ text: 'Begin curating the playlist.' }] }];
     let finished = false;
     let loopCount = 0;
-    const MAX_LOOPS = 15; // safety fallback
-    const trackCache = {}; // Cache found tracks by ID
+    const MAX_LOOPS = 15;
+    const TIMEOUT_MS = 30000; // 30s global timeout
+    const trackCache = {};
 
-    // If there's an injected concierge queue, add them first!
     if (sessionAdjustments.injectedQueue && sessionAdjustments.injectedQueue.length > 0) {
       systemPrompt += `\n\nNOTE: The Concierge specifically requested you consider these artists: ${sessionAdjustments.injectedQueue.map(a => a.name).join(', ')}`;
     }
 
     console.log("🤖 CuratorAgent: Starting Agentic ReAct Loop...");
+    const startTime = Date.now();
 
     while (!finished && loopCount < MAX_LOOPS && playlist.length < MAX_TRACKS) {
+      if (Date.now() - startTime > TIMEOUT_MS) {
+        console.warn(`CuratorAgent: Hit ${TIMEOUT_MS / 1000}s timeout with ${playlist.length} tracks.`);
+        break;
+      }
+
       loopCount++;
       try {
         const { functionCalls, textReply } = await callWithTools(systemPrompt, messages, tools, 'reasoning');
@@ -149,7 +155,6 @@ CRITICAL RULES:
         }
 
         if (!functionCalls || functionCalls.length === 0) {
-          // If no tools called, prompt it to continue
           messages.push({ role: 'user', parts: [{ text: `You currently have ${playlist.length}/${MAX_TRACKS} tracks. Please use your tools to find and add more tracks.` }] });
           continue;
         }
@@ -172,7 +177,7 @@ CRITICAL RULES:
             else if (call.name === 'search_spotify_track') {
               const track = await searchTrack(args.track_name, args.artist_name);
               if (track) {
-                trackCache[track.id] = track; // Store full object
+                trackCache[track.id] = track;
                 result = `SUCCESS: Track ID is ${track.id}. Artist ID is ${track.artists[0]?.id}.`;
               } else {
                 result = "Track not found on Spotify. Try another.";
@@ -211,7 +216,6 @@ CRITICAL RULES:
           });
         }
 
-        // Add tool responses back to history
         messages.push({
           role: 'model',
           parts: functionCalls.map(c => ({ functionCall: c }))
@@ -227,11 +231,24 @@ CRITICAL RULES:
       }
     }
 
-    console.log(`🤖 CuratorAgent: Finished loop. Assembled ${playlist.length} tracks.`);
+    console.log(`🤖 CuratorAgent: Finished. ${playlist.length} tracks in ${((Date.now() - startTime) / 1000).toFixed(1)}s.`);
     
-    // Fallback if LLM failed to add enough tracks: just use the candidate pool
+    // Fallback: if LLM failed or timed out, use deterministic Elo-ranked candidate pool
     if (playlist.length === 0 && candidatePool && candidatePool.length > 0) {
-      return candidatePool.slice(0, MAX_TRACKS).map(c => ({...c, finalScore: 0.8, dominantFactor: 'Fallback from Scout Pool'}));
+      console.warn("CuratorAgent: Falling back to Elo-ranked selection from Scout pool.");
+      const eloRatings = tasteState?.eloRatings || {};
+      const sorted = [...candidatePool].sort((a, b) => {
+        const eloA = eloRatings[a.artistId]?.rating || 1500;
+        const eloB = eloRatings[b.artistId]?.rating || 1500;
+        return eloB - eloA;
+      });
+      const seenArtists = new Set();
+      const deduped = sorted.filter(c => {
+        if (seenArtists.has(c.artistId || c.artistName)) return false;
+        seenArtists.add(c.artistId || c.artistName);
+        return true;
+      });
+      return deduped.slice(0, MAX_TRACKS).map(c => ({...c, finalScore: 0.8, dominantFactor: 'Elo-ranked from your taste profile'}));
     }
 
     return playlist;

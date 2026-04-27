@@ -1,4 +1,3 @@
-import { SliderPanel } from '../components/slider-panel.js';
 import { AgentStatus } from '../components/agent-status.js';
 import { Orchestrator } from '../../agents/orchestrator.js';
 import { PlaylistView } from '../components/playlist-view.js';
@@ -12,9 +11,16 @@ export function renderPlaylistPage(container) {
         <button class="btn btn-ghost" id="toggle-generator-btn">+ New</button>
       </header>
 
-      <div id="generator-section" style="display:none; background:var(--bg-card); padding:var(--space-4); border-radius:var(--radius-md); border: 1px solid var(--border-subtle); margin-bottom:var(--space-6);">
-        <h3 style="margin-bottom:var(--space-4); font-size:var(--font-size-lg);">Generate New Playlist</h3>
-        <div id="slider-container"></div>
+      <div id="generator-section" style="display:none; background:var(--bg-card); padding:var(--space-5); border-radius:var(--radius-lg); border: 1px solid var(--border-subtle); margin-bottom:var(--space-6);">
+        <h3 style="margin-bottom:var(--space-2); font-size:var(--font-size-lg); display: flex; align-items: center; gap: 8px;">
+          <span style="color: var(--accent-primary); font-size: 24px;">✨</span> What's the vibe?
+        </h3>
+        <p style="color: var(--text-muted); font-size: var(--font-size-sm); margin-bottom: var(--space-4);">Tell the agents exactly what kind of playlist you want right now.</p>
+        
+        <textarea id="vibe-input" rows="3" placeholder="e.g. 'Late night driving', 'Focusing on work, no lyrics', or 'Just play my S-Tier favorites...'" 
+          style="width: 100%; background: var(--bg-surface); border: 1px solid var(--border-glass); border-radius: var(--radius-md); padding: var(--space-3); color: var(--text-primary); font-family: var(--font-family); font-size: var(--font-size-md); resize: none; margin-bottom: var(--space-4); outline: none; transition: border-color var(--transition-fast);"
+          onfocus="this.style.borderColor='var(--accent-primary)'" onblur="this.style.borderColor='var(--border-glass)'"></textarea>
+
         <div id="status-container"></div>
         <div style="text-align: center; margin-top: var(--space-4);">
           <button class="btn btn-primary btn-lg" id="generate-btn" style="width: 100%; max-width: 300px;">
@@ -31,9 +37,6 @@ export function renderPlaylistPage(container) {
       </div>
     </div>
   `;
-
-  const sliderPanel = new SliderPanel(document.getElementById('slider-container'));
-  sliderPanel.render();
 
   const statusPanel = new AgentStatus(document.getElementById('status-container'));
 
@@ -59,27 +62,7 @@ export function renderPlaylistPage(container) {
   // Render Library
   function renderLibrary() {
     const listEl = document.getElementById('saved-playlists-list');
-    let playlists = DataStore.getSavedPlaylists();
-    
-    // Auto-populate with mock if completely empty to show functionality
-    if (playlists.length === 0 && !DataStore.load('has_seen_mock_playlists')) {
-       const mockCtx = {
-          playlistSummary: "A curated mix of deep atmospheric tracks to help you focus, built around dark synth and ambient textures.",
-          scoredPlaylist: Array.from({ length: 15 }, (_, i) => ({
-            id: `mock-${i}`,
-            name: `Curated Track ${i + 1}`,
-            artistName: 'Various Artists',
-            imageUrl: '',
-            albumName: 'Mock Album',
-            score: 95 - i
-          })),
-          explanations: {}
-       };
-       DataStore.saveGeneratedPlaylist(mockCtx);
-       DataStore.save('has_seen_mock_playlists', true);
-       playlists = DataStore.getSavedPlaylists();
-    }
-
+    const playlists = DataStore.getSavedPlaylists();
     if (playlists.length === 0) {
       listEl.innerHTML = `<div style="text-align:center; padding:var(--space-6); color:var(--text-muted);">No playlists yet. Generate one above!</div>`;
       return;
@@ -191,12 +174,14 @@ export function renderPlaylistPage(container) {
 
   document.getElementById('generate-btn').addEventListener('click', async (e) => {
     const btn = e.target.closest('button');
+    const vibe = document.getElementById('vibe-input').value.trim();
+    
     btn.disabled = true;
     btn.innerHTML = `<span class="pipeline-dot active" style="display:inline-block;width:16px;height:16px;margin-right:8px;"></span> Working...`;
     resultsEl.innerHTML = '';
 
     try {
-      const context = await orchestrator.generatePlaylist('user_local', sliderPanel.getValues());
+      const context = await orchestrator.generatePlaylist('user_local', vibe);
       window.TG.lastContext = context;
       
       // Save it to library

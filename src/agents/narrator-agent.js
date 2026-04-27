@@ -154,7 +154,7 @@ CRITICAL RULES:
 3. USE THE DISLIKES: If they have 'Actively Dismissed' artists, playfully roast them for what they reject (e.g., "I know you can't stand the over-produced sheen of...").
 4. BE BOLD & SPECIFIC: Use a highly specific, metaphorical example. For instance, "Your taste feels like you're trying to recreate the exact feeling of walking home in the rain in 2005 listening to [Artist A], but with the bass of [Artist B]."
 5. LENGTH & STRUCTURE: Write 3 to 4 substantial paragraphs. Make it feel like a meaningful, deep-dive text message or conversation. Do not use generic fluff like "You have a diverse mix of sounds."
-6. Do not use markdown, just write the plain text paragraphs.`;
+6. Do not use markdown. Do NOT start your response with "Your musical vibe" or any titles. Just write the plain text paragraphs.`;
 
     try {
       const result = await callWithTools(prompt, [{ role: 'user', parts: [{text: 'Analyze my taste identity.'}] }], [], 'reasoning');
@@ -179,7 +179,7 @@ CRITICAL RULES:
     else if (fallbackGenresList.length > 5) vibe = "Broad & Experimental";
 
     if (fallbackArtists && fallbackGenres) {
-      return `<strong>Your musical vibe: ${vibe}</strong><br><br>I've always noticed you gravitate toward ${fallbackGenres}. It's so classic you to keep artists like ${fallbackArtists} in heavy rotation. Your taste feels like you're trying to recreate the exact feeling of discovering those core sounds, but you're not afraid to mix it up. Your sonic identity is unmistakably yours—it feels less like an algorithm and more like a handwritten mixtape you've been putting together for years.`;
+      return `I've always noticed you gravitate toward ${fallbackGenres}. It's so classic you to keep artists like ${fallbackArtists} in heavy rotation. Your taste feels like you're trying to recreate the exact feeling of discovering those core sounds, but you're not afraid to mix it up. Your sonic identity is unmistakably yours—it feels less like an algorithm and more like a handwritten mixtape you've been putting together for years.`;
     }
 
     return "You have an eclectic blend of sonic textures. Based on your current trajectory, you seem to be searching for something rhythmic and adventurous, pushing the boundaries of what you normally keep on repeat.";

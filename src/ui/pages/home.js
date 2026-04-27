@@ -34,11 +34,13 @@ export function renderHomePage(container) {
       </div>
 
       <div style="display: flex; flex-direction: column; gap: var(--space-3); max-width: 320px;">
-        <button class="btn btn-primary btn-lg" onclick="document.getElementById('chat-fab')?.click()" style="justify-content: flex-start; box-shadow: var(--shadow-glow-strong);">
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0;">
-            <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path>
+        <button class="btn btn-primary btn-lg" onclick="location.hash='#/playlist'" style="justify-content: flex-start; box-shadow: var(--shadow-glow-strong);">
+          <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0;">
+            <path d="M2 4h12M2 8h8M2 12h5"/>
+            <circle cx="13" cy="11" r="2"/>
+            <path d="M13 9V5l2 1"/>
           </svg>
-          Chat with Agent Music
+          Generate Playlist
         </button>
         <button class="btn btn-secondary btn-lg" onclick="location.hash='#/game'" style="justify-content: flex-start;">
           <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0;">
@@ -46,14 +48,6 @@ export function renderHomePage(container) {
             <path d="M7 8h2"/>
           </svg>
           Compare Artists
-        </button>
-        <button class="btn btn-secondary btn-lg" onclick="location.hash='#/playlist'" style="justify-content: flex-start;">
-          <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0;">
-            <path d="M2 4h12M2 8h8M2 12h5"/>
-            <circle cx="13" cy="11" r="2"/>
-            <path d="M13 9V5l2 1"/>
-          </svg>
-          Playlists
         </button>
         <button class="btn btn-ghost" onclick="location.hash='#/profile'" style="justify-content: flex-start; font-size: var(--font-size-sm);">
           <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0;">

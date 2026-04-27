@@ -16,315 +16,97 @@ export class CuratorAgent {
    * Main entry point for the Agentic Curator.
    * Runs a ReAct loop with Gemini to dynamically research and assemble a playlist.
    */
-  async rankAndSelect(tasteState, candidatePool, sessionIntent, sessionAdjustments = {}, context = null) {
-    const playlist = [];
-    const MAX_TRACKS = 25;
-    const MAX_PER_ARTIST = 3;
-    const artistCounts = {}; // track per-artist count
+  async rankAndSelect(tasteState, candidatePool, sessionIntent, sessionAdjustments = {}, context = null, onThought = null) {
+    if (onThought) onThought("Analyzing taste graph and candidate pool...");
     
-    // Convert top genres and favorite artists into a prompt
+    const MAX_TRACKS = 20;
+    const MAX_PER_ARTIST = 2;
+    
+    // Fallback if pool is empty
+    if (!candidatePool || candidatePool.length === 0) {
+      console.warn("CuratorAgent: Empty candidate pool, returning empty playlist.");
+      return [];
+    }
+
+    if (onThought) onThought("Evaluating tracks against session intent...");
+
     const topGenres = (tasteState.topGenres || []).slice(0, 5).join(', ');
     const topArtistsArray = (tasteState.topRankedArtists || tasteState.artists || []).slice(0, 5);
     const topArtists = topArtistsArray.map(a => a.name).join(', ');
-    
-    // Dynamic RAG: Fetch Wikipedia Context for the Top 3 Artists
-    const { getArtistWikiSummary } = await import('../data/wikipedia-api.js');
-    const wikiContexts = await Promise.all(topArtistsArray.slice(0, 3).map(async a => {
-      const summary = await getArtistWikiSummary(a.name);
-      return summary ? `${a.name}: ${summary}` : null;
+
+    // Prepare a condensed pool for the LLM to review
+    // We send up to 60 tracks to give it plenty of options
+    const poolForPrompt = candidatePool.slice(0, 60).map(c => ({
+      id: c.track.id,
+      name: c.track.name,
+      artist: c.artistName,
+      genres: c.tags?.slice(0, 3).join(', ') || 'Unknown'
     }));
-    const wikiText = wikiContexts.filter(Boolean).join('\n\n');
 
-    // Inter-agent context enrichment
-    const anchoredArtist = context?.tasteProfile?.anchoredTopArtist;
-    const coverageGaps = (context?.coverageGaps || []).map(g => g.genre);
-    const underExplored = context?.tasteProfile?.underExploredGenres || [];
-    const skippedGenres = context?.sessionSignals?.skippedGenres || [];
+    const systemPrompt = `You are a Fast Music Curator Agent.
+Your job is to select exactly ${MAX_TRACKS} tracks from the provided Candidate Pool that best fit the user's Session Intent.
+
+USER TASTE PROFILE:
+- Top Artists: ${topArtists}
+- Top Genres: ${topGenres}
+
+SESSION INTENT: "${sessionIntent || 'General vibe'}"
+(CRITICAL: If the intent specifies a genre like 'Jazz', you MUST prioritize tracks that fit that genre over the user's top artists).
+
+RULES:
+1. Select exactly ${MAX_TRACKS} tracks.
+2. Max ${MAX_PER_ARTIST} tracks per artist.
+3. Return ONLY a valid JSON array of objects.
+4. Each object must have:
+   - "id": the track ID
+   - "reason": a short, 1-sentence explanation of why it fits the intent or the user's taste.
+
+Return ONLY the JSON array, no markdown blocks.`;
+
+    const userMessage = `Candidate Pool:\n${JSON.stringify(poolForPrompt, null, 2)}`;
+
+    let selectedIds = [];
+    let reasonsMap = {};
+
+    try {
+      if (onThought) onThought("Generating final playlist structure...");
+      const { callWithTools } = await import('../data/gemini-api.js');
+      // We use callWithTools but with no tools, just to get a text response
+      const result = await callWithTools(systemPrompt, [{ role: 'user', parts: [{ text: userMessage }] }], [], 'fast');
+      
+      let rawText = result.textReply.trim();
+      if (rawText.startsWith('\`\`\`json')) {
+        rawText = rawText.replace(/\`\`\`json/g, '').replace(/\`\`\`/g, '').trim();
+      }
+      
+      const parsed = JSON.parse(rawText);
+      selectedIds = parsed.map(p => p.id);
+      parsed.forEach(p => { reasonsMap[p.id] = p.reason; });
+
+    } catch (err) {
+      console.error("CuratorAgent: Fast selection failed, falling back to top Elo.", err);
+      // Fallback: Just take the top 20
+      selectedIds = poolForPrompt.slice(0, MAX_TRACKS).map(p => p.id);
+    }
+
+    if (onThought) onThought("Mixing and assembling tracks...");
+
+    // Filter the actual candidate objects based on selected IDs
+    let playlist = candidatePool.filter(c => selectedIds.includes(c.track.id));
     
-    let systemPrompt = `You are a Music Curator Agent that DISCOVERS new music by exploring the music graph.
+    // Add reasons
+    playlist = playlist.map(c => ({
+      ...c,
+      dominantFactor: reasonsMap[c.track.id] || c.dominantFactor || 'Selected based on your taste profile.'
+    }));
 
-YOUR MISSION: Build a ${MAX_TRACKS}-track playlist by RESEARCHING outward from the user's taste anchors. Do NOT just list tracks you already know — use your tools to explore connections, find artists the user hasn't heard of, and verify every track exists on Spotify before adding it.
+    // Weighted shuffle to mix up the order
+    playlist = playlist.map(value => ({ value, sort: Math.random() }))
+                       .sort((a, b) => a.sort - b.sort)
+                       .map(({ value }) => value);
 
-USER TASTE PROFILE (calibrated via head-to-head comparisons):
-- Favorite Artists (S-Tier): ${(tasteState.tasteTiers?.coreIdentity || []).join(', ') || 'Not calibrated yet'}
-- Artists They're Into (A-Tier): ${(tasteState.tasteTiers?.activeObsessions || []).join(', ') || 'Not calibrated yet'}
-- Artists They Dislike: ${(tasteState.tasteTiers?.activelyDismissed || []).join(', ') || 'None'}
-- Top Genres: ${topGenres || 'Various'}
-${anchoredArtist ? `- #1 Artist: ${anchoredArtist} — their confirmed absolute favorite.` : ''}
-
-EXPLICIT RULES:
-- Banned Artists: ${(tasteState.explicitPreferences?.banned_artists || []).join(', ') || 'None'}
-- Banned Tracks: ${(tasteState.explicitPreferences?.banned_tracks || []).join(', ') || 'None'}
-- Preferred Decades: ${(tasteState.explicitPreferences?.preferred_decades || []).join(', ') || 'Any'}
-- Concierge Memories: ${(tasteState.explicitPreferences?.agent_memories || []).join('; ') || 'None'}
-
-SESSION INTENT / TASK: "${sessionIntent || 'General playlist based on my taste'}"
-(Treat this intent as a strict directive. If it is a specific task—like "find songs with horns", "give me 5 tracks from the 90s"—you MUST execute that exact task using your tools, while still ensuring it aligns with their Taste Profile.)
-
-${skippedGenres.length > 0 ? `SESSION FEEDBACK: User skipped ${skippedGenres.join(', ')} tracks recently. Deprioritize.` : ''}
-
-CULTURAL CONTEXT (from Wikipedia):
-${wikiText || 'No deep context available — use MusicBrainz to research artists.'}
-
-YOUR RESEARCH STRATEGY (follow this step by step):
-0. You MUST start by calling the think_and_plan tool to analyze the user's INTENT against their TASTE PROFILE. Determine if their intent requires out-of-domain exploration.
-1. If the requested task/vibe (e.g., "Jazz", "Classical") does NOT match the user's known top artists, you are STRICTLY FORBIDDEN from starting with their top artists. You MUST use search_spotify_artists (e.g. query: "genre:jazz") to find completely new seed artists.
-2. If the task aligns with their taste, START from 2-3 of their favorite artists as "seed" anchors.
-3. Use get_similar_artists on your seeds to branch out.
-4. Verify promising discoveries using search_musicbrainz.
-5. Use get_artist_top_tracks to find specific tracks, then add_track_to_playlist. Explain WHY each track belongs in your reason.
-6. REPEAT: explore further out from your discoveries to find truly novel picks.
-
-CRITICAL RULES:
-- PEDANTIC COMPLIANCE: If the user asks for a specific genre, era, or vibe, you MUST ONLY add tracks that fit that constraint. Do NOT just give them their favorite artists if they don't fit the constraint.
-- You MUST use tools to discover and verify. Do not hallucinate track names.
-- At least 50% of the playlist should be from artists NOT in the user's S-tier or A-tier.
-- Maximum ${MAX_PER_ARTIST} tracks per artist.
-- After adding ${MAX_TRACKS} tracks, call finish_playlist.`;
-
-    const tools = [
-      {
-        name: 'think_and_plan',
-        description: 'Use this tool FIRST. Write out your step-by-step reasoning on how you will fulfill the user\'s specific session intent, and whether you need to break out of their known taste profile to do so.',
-        parameters: {
-          type: 'object',
-          properties: { rationale: { type: 'string', description: 'Your chain-of-thought reasoning.' } },
-          required: ['rationale']
-        }
-      },
-      {
-        name: 'search_musicbrainz',
-        description: 'Research an artist: get their country of origin, active years, and genre tags. Use this to decide if an unfamiliar artist fits the session vibe.',
-        parameters: {
-          type: 'object',
-          properties: { artist_name: { type: 'string' } },
-          required: ['artist_name']
-        }
-      },
-      {
-        name: 'get_similar_artists',
-        description: 'Explore outward: find 5 artists similar to a given seed. This is your PRIMARY discovery tool — use it to find artists the user hasn\'t heard of yet.',
-        parameters: {
-          type: 'object',
-          properties: { artist_name: { type: 'string' } },
-          required: ['artist_name']
-        }
-      },
-      {
-        name: 'get_artist_top_tracks',
-        description: 'Get the top tracks for an artist on Spotify. Use this AFTER discovering an artist to see what tracks they have available.',
-        parameters: {
-          type: 'object',
-          properties: { artist_name: { type: 'string' } },
-          required: ['artist_name']
-        }
-      },
-      {
-        name: 'search_spotify_track',
-        description: 'Search Spotify for a specific track by name and artist. Returns the track ID needed for add_track_to_playlist. Use this to verify a track exists.',
-        parameters: {
-          type: 'object',
-          properties: { track_name: { type: 'string' }, artist_name: { type: 'string' } },
-          required: ['track_name', 'artist_name']
-        }
-      },
-      {
-        name: 'search_spotify_artists',
-        description: 'Search for artists by genre, vibe, or name (e.g. query: "genre:jazz", "jazz", "electronic"). Use this to find new seed artists when the user\'s top artists do not match the session intent (e.g., they ask for Jazz but only listen to Rock).',
-        parameters: {
-          type: 'object',
-          properties: { query: { type: 'string' } },
-          required: ['query']
-        }
-      },
-      {
-        name: 'add_track_to_playlist',
-        description: 'Add a verified track to the final playlist. You MUST have a valid track_id from search_spotify_track or get_artist_top_tracks first.',
-        parameters: {
-          type: 'object',
-          properties: {
-            track_id: { type: 'string', description: 'The Spotify Track ID (from a previous tool call)' },
-            track_name: { type: 'string' },
-            artist_name: { type: 'string' },
-            reason: { type: 'string', description: 'Why this track fits the playlist — reference the session intent and how you discovered this artist' }
-          },
-          required: ['track_id', 'track_name', 'artist_name', 'reason']
-        }
-      },
-      {
-        name: 'finish_playlist',
-        description: 'Call this when you have successfully added the required number of tracks.',
-        parameters: { type: 'object', properties: {} }
-      }
-    ];
-
-    let messages = [{ role: 'user', parts: [{ text: 'Begin curating the playlist.' }] }];
-    let finished = false;
-    let loopCount = 0;
-    const MAX_LOOPS = 40;
-    const TIMEOUT_MS = 60000; // 60s for larger playlists
-    const trackCache = {};
-
-    if (sessionAdjustments.injectedQueue && sessionAdjustments.injectedQueue.length > 0) {
-      systemPrompt += `\n\nNOTE: The Concierge specifically requested you consider these artists: ${sessionAdjustments.injectedQueue.map(a => a.name).join(', ')}`;
-    }
-
-    console.log("🤖 CuratorAgent: Starting Agentic ReAct Loop...");
-    const startTime = Date.now();
-
-    while (!finished && loopCount < MAX_LOOPS && playlist.length < MAX_TRACKS) {
-      if (Date.now() - startTime > TIMEOUT_MS) {
-        console.warn(`CuratorAgent: Hit ${TIMEOUT_MS / 1000}s timeout with ${playlist.length} tracks.`);
-        break;
-      }
-
-      loopCount++;
-      try {
-        const { functionCalls, textReply } = await callWithTools(systemPrompt, messages, tools, 'reasoning');
-        
-        if (textReply) {
-          messages.push({ role: 'model', parts: [{ text: textReply }] });
-        }
-
-        if (!functionCalls || functionCalls.length === 0) {
-          messages.push({ role: 'user', parts: [{ text: `You currently have ${playlist.length}/${MAX_TRACKS} tracks. Please use your tools to find and add more tracks.` }] });
-          continue;
-        }
-
-        const toolResponses = [];
-
-        for (const call of functionCalls) {
-          let result = '';
-          const args = call.args || {};
-
-          try {
-            if (call.name === 'think_and_plan') {
-              result = `Plan accepted: ${args.rationale}. Now execute the plan using search_spotify_artists, get_similar_artists, etc.`;
-            }
-            else if (call.name === 'search_musicbrainz') {
-              const meta = await getArtistMetadata(args.artist_name);
-              result = meta 
-                ? `Artist: ${args.artist_name}. Country: ${meta.country || 'Unknown'}. Active since: ${meta.beginYear || 'Unknown'}. Genre tags: ${(meta.tags||[]).join(', ') || 'None found'}. ${meta.disambiguation || ''}` 
-                : `"${args.artist_name}" not found on MusicBrainz. Try a different spelling or artist.`;
-            } 
-            else if (call.name === 'get_similar_artists') {
-              const similar = await getSimilarArtists(args.artist_name, 8);
-              if (similar.length > 0) {
-                result = `Artists similar to ${args.artist_name}:\n` + similar.map((a, i) => 
-                  `${i+1}. ${a.name} (match: ${a.match ? (a.match * 100).toFixed(0) + '%' : 'unknown'})`
-                ).join('\n') + '\n\nUse get_artist_top_tracks or search_musicbrainz on any of these to explore further.';
-              } else {
-                result = `No similar artists found for "${args.artist_name}". Try a different seed.`;
-              }
-            } 
-            else if (call.name === 'get_artist_top_tracks') {
-              // First, search for the artist to get their Spotify ID
-              const { searchArtist } = await import('../data/spotify-api.js');
-              const artist = await searchArtist(args.artist_name);
-              if (artist && artist.id) {
-                const tracks = await getArtistTopTracks(artist.id);
-                if (tracks && tracks.length > 0) {
-                  tracks.forEach(t => { trackCache[t.id] = t; });
-                  result = `Top tracks for ${artist.name} (${artist.genres?.slice(0,3).join(', ') || 'no genre tags'}):\n` + tracks.slice(0, 8).map((t, i) => 
-                    `${i+1}. "${t.name}" (ID: ${t.id}) — Album: ${t.album?.name || 'Unknown'}`
-                  ).join('\n') + '\n\nUse add_track_to_playlist with any of these track IDs.';
-                } else {
-                  result = `Found ${artist.name} on Spotify but they have no top tracks available.`;
-                }
-              } else {
-                result = `"${args.artist_name}" not found on Spotify. They may not be on the platform — try a different artist.`;
-              }
-            }
-            else if (call.name === 'search_spotify_track') {
-              const track = await searchTrack(args.track_name, args.artist_name);
-              if (track) {
-                trackCache[track.id] = track;
-                result = `Found: "${track.name}" by ${track.artists?.map(a=>a.name).join(', ')} (ID: ${track.id}). Album: ${track.album?.name || 'Unknown'}.`;
-              } else {
-                result = `"${args.track_name}" by ${args.artist_name} not found on Spotify. Try get_artist_top_tracks to see what's available.`;
-              }
-            } 
-            else if (call.name === 'search_spotify_artists') {
-              const results = await searchArtists(args.query, 5);
-              if (results && results.length > 0) {
-                result = `Artists matching query "${args.query}":\n` + results.map((a, i) => 
-                  `${i+1}. ${a.name} (Genres: ${(a.genres||[]).slice(0,3).join(', ')})`
-                ).join('\n') + '\n\nUse get_similar_artists, get_artist_top_tracks, or search_musicbrainz on these discoveries.';
-              } else {
-                result = `No artists found matching "${args.query}". Try a different search query or genre term.`;
-              }
-            } 
-            else if (call.name === 'add_track_to_playlist') {
-              if (playlist.some(t => t.track.id === args.track_id)) {
-                result = "Track already in playlist. Pick a different one.";
-              } else if ((artistCounts[args.artist_name] || 0) >= MAX_PER_ARTIST) {
-                result = `Already have ${MAX_PER_ARTIST} tracks from ${args.artist_name}. Pick a different artist for variety.`;
-              } else {
-                const fullTrack = trackCache[args.track_id] || { id: args.track_id, name: args.track_name };
-                playlist.push({
-                  track: fullTrack,
-                  artistName: args.artist_name,
-                  artistId: fullTrack.artists?.[0]?.id || '',
-                  source: 'agentic_research',
-                  finalScore: 0.99,
-                  dominantFactor: args.reason,
-                  tags: []
-                });
-                artistCounts[args.artist_name] = (artistCounts[args.artist_name] || 0) + 1;
-                result = `Track '${args.track_name}' added. Playlist size: ${playlist.length}/${MAX_TRACKS}. (${artistCounts[args.artist_name]}/${MAX_PER_ARTIST} from ${args.artist_name})`;
-              }
-            } 
-            else if (call.name === 'finish_playlist') {
-              finished = true;
-              result = "Finished.";
-            }
-          } catch (e) {
-            result = `Error executing tool: ${e.message}`;
-          }
-
-          toolResponses.push({
-            functionResponse: {
-              name: call.name,
-              response: { result }
-            }
-          });
-        }
-
-        messages.push({
-          role: 'model',
-          parts: functionCalls.map(c => ({ functionCall: c }))
-        });
-        messages.push({
-          role: 'user',
-          parts: toolResponses
-        });
-
-      } catch (err) {
-        console.error("CuratorAgent Loop Error:", err);
-        break;
-      }
-    }
-
-    console.log(`🤖 CuratorAgent: Finished. ${playlist.length} tracks in ${((Date.now() - startTime) / 1000).toFixed(1)}s.`);
-    
-    // Fallback: if LLM failed or timed out, use deterministic Elo-ranked candidate pool
-    if (playlist.length === 0 && candidatePool && candidatePool.length > 0) {
-      console.warn("CuratorAgent: Falling back to Elo-ranked selection from Scout pool.");
-      const eloRatings = tasteState?.eloRatings || {};
-      const sorted = [...candidatePool].sort((a, b) => {
-        const eloA = eloRatings[a.artistId]?.rating || 1500;
-        const eloB = eloRatings[b.artistId]?.rating || 1500;
-        return eloB - eloA;
-      });
-      const seenArtists = new Set();
-      const deduped = sorted.filter(c => {
-        if (seenArtists.has(c.artistId || c.artistName)) return false;
-        seenArtists.add(c.artistId || c.artistName);
-        return true;
-      });
-      return deduped.slice(0, MAX_TRACKS).map(c => ({...c, finalScore: 0.8, dominantFactor: 'Elo-ranked from your taste profile'}));
-    }
-
-    return playlist;
+    // Limit to max just in case
+    return playlist.slice(0, MAX_TRACKS);
+  }
   }
 }

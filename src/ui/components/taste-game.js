@@ -457,108 +457,15 @@ export class TasteGame {
    * and explore the user's taste boundaries, drawing from active learning principles.
    */
   _selectStrategicPair() {
-    const strategyRoll = Math.random();
     const eloRatings = DataStore.getEloRatings();
     
-    // Filter out "rejected" discoveries. If a discovery (an artist not in the known base)
-    // drops below 1450 Elo, they have lost multiple times and we should stop showing them.
-    const knownIds = new Set(this.knownArtists.map(a => a.id));
-    const viableRelated = this.relatedArtists;
-    
-    // Filter ALL pools by information gain — settled artists are HARD-excluded.
-    // Weight 0 = nothing left to learn from this artist as a free participant.
-    // They can still appear as *opponents* in a calibration task.
+    // Filter ALL pools by information gain — settled/ignored artists are excluded
     const viableAll = this.allArtists.filter(a => this._getInfoGainWeight(eloRatings[a.id]) > 0);
 
-    // Sort known artists by Elo to identify "benchmarks"
+    // Benchmarks: Known artists sorted by Elo
     const knownRanked = this.knownArtists
       .slice()
       .sort((a, b) => (eloRatings[b.id]?.rating || 1500) - (eloRatings[a.id]?.rating || 1500));
-
-    // 0. Beli-Style Calibration (Binary Search)
-    // If we are actively calibrating a new artist, or need to start one
-    if (this.calibrationTask) {
-      const { targetId, low, high } = this.calibrationTask;
-      const targetArtist = this.allArtists.find(a => a.id === targetId);
-      
-      if (!targetArtist) {
-        this.calibrationTask = null;
-      } else {
-        // Build ranked opponents list, EXCLUDING the target artist itself
-        const rankedOpponents = this.knownArtists
-          .filter(a => eloRatings[a.id] && a.id !== targetId)
-          .sort((a, b) => eloRatings[b.id].rating - eloRatings[a.id].rating);
-          
-        // Clamp bounds to valid range
-        const clampedHigh = Math.min(high, rankedOpponents.length - 1);
-        
-        if (rankedOpponents.length > 0 && low <= clampedHigh) {
-          // Instead of strict binary search, pick randomly within the middle bounds
-          // to create much more variety in the benchmark opponents used.
-          const range = clampedHigh - low;
-          let mid;
-          if (range <= 2) {
-            mid = low + Math.floor(Math.random() * (range + 1));
-          } else {
-            const padding = Math.floor(range * 0.2);
-            const minIndex = low + padding;
-            const maxIndex = clampedHigh - padding;
-            mid = Math.floor(Math.random() * (maxIndex - minIndex + 1)) + minIndex;
-          }
-          
-          let opponent = rankedOpponents[mid];
-          
-          // Ensure we haven't already matched them during this calibration
-          if (this._hasPlayed(targetId, opponent.id, eloRatings)) {
-             let found = false;
-             for (let i = 1; i <= (clampedHigh - low); i++) {
-                if (mid + i <= clampedHigh && !this._hasPlayed(targetId, rankedOpponents[mid + i].id, eloRatings)) { mid = mid + i; found = true; break; }
-                if (mid - i >= low && !this._hasPlayed(targetId, rankedOpponents[mid - i].id, eloRatings)) { mid = mid - i; found = true; break; }
-             }
-             if (!found) {
-                // All opponents in bounds are exhausted; terminate calibration early
-                this.calibrationTask.low = clampedHigh + 1;
-                return this._selectStrategicPair();
-             }
-             opponent = rankedOpponents[mid];
-          }
-
-          this.calibrationTask.mid = mid;
-          this.calibrationTask.high = clampedHigh; // Keep bounds valid
-          return { A: targetArtist, B: opponent, strategy: 'calibration', insight: `⚖️ Calibrating: Where does ${targetArtist.name} rank?` };
-        } else {
-          // bounds collapsed or no valid opponents, finish task
-          this.calibrationTask = null;
-        }
-      }
-    }
-
-    // Try to start a new calibration task if we have fresh uncalibrated artists
-    const uncalibrated = this.allArtists.find(a => !eloRatings[a.id]);
-    
-    if (uncalibrated && knownRanked.length >= 3) {
-      this.calibrationTask = {
-        targetId: uncalibrated.id,
-        low: 0,
-        high: knownRanked.length - 1,
-        mid: -1
-      };
-      // Recursively call to trigger the calibration
-      return this._selectStrategicPair();
-    }
-
-    // 0. Broad Exploration Phase (Rounds 1-4)
-    // If we are just starting (especially for cold-starts without Spotify), force Genre Clashes
-    // between anchors to quickly map out the user's broad macro-preferences without jumping to conclusions.
-    if (this.roundsPlayed <= 4 && viableAll.length >= 2) {
-      const a = viableAll[Math.floor(Math.random() * viableAll.length)];
-      const aGenres = new Set(a.genres || []);
-      const clashCandidates = viableAll.filter(c => c.id !== a.id && !this._hasPlayed(a.id, c.id, eloRatings) && !(c.genres || []).some(g => aGenres.has(g)));
-      if (clashCandidates.length > 0) {
-        const b = clashCandidates[Math.floor(Math.random() * clashCandidates.length)];
-        return { A: a, B: b, strategy: 'clash', insight: '🌍 Broad Exploration: Which style do you prefer?' };
-      }
-    }
 
     // 1. Concierge Injection (Highest Priority)
     if (this.injectedQueue && this.injectedQueue.length > 0) {
@@ -568,91 +475,29 @@ export class TasteGame {
       return { ...pair, strategy: 'injection', insight: '⚔️ Contender: Can this challenger beat your favorites?' };
     }
 
-    // 1.6. Coverage Gap (~15%): Proactively explore an under-covered genre/style.
-    // Similar to how Beli prompts you on restaurant categories you haven't rated.
-    if (strategyRoll < 0.15) {
-      const gap = this._getCoverageGap(eloRatings);
-      if (gap && gap.candidates.length >= 2) {
-        const [a, b] = gap.candidates;
-        const pair = Math.random() > 0.5 ? { A: a, B: b } : { A: b, B: a };
-        return { ...pair, strategy: 'coverage', insight: `🗺️ Expanding taste map: Exploring your ${gap.label} preferences` };
-      }
+    // 2. Main Workflow: Contender vs Benchmark
+    // We want to avoid comparing two settled artists. We pit an actively learning contender
+    // against an established benchmark.
+    if (viableAll.length > 0 && knownRanked.length > 0) {
+       // Find the most uncalibrated contenders (fewest comparisons)
+       const contenders = viableAll.sort((a, b) => 
+         (eloRatings[a.id]?.comparison_count || 0) - (eloRatings[b.id]?.comparison_count || 0)
+       );
+       
+       // Pick randomly from the top 5 most uncalibrated to maintain variety
+       const poolSize = Math.min(5, contenders.length);
+       const contender = contenders[Math.floor(Math.random() * poolSize)];
+       
+       // Find a benchmark that is close to the contender's current Elo
+       const anchor = this._getClosestAnchor(contender.id, knownRanked, eloRatings);
+       
+       if (anchor) {
+         const pair = Math.random() > 0.5 ? { A: contender, B: anchor } : { A: anchor, B: contender };
+         return { ...pair, strategy: 'benchmark', insight: '🎯 Benchmark Test: Calibrating against your established favorites.' };
+       }
     }
 
-    // 1.5. Spotify History Sprinkling (~25% chance if available)
-    // Pulls an artist from the user's actual Spotify listening data and pits them against an anchor.
-    if (strategyRoll < 0.25 && this.spotifyArtists.length > 0) {
-      // Pop a random artist from their listening data
-      const bIndex = Math.floor(Math.random() * this.spotifyArtists.length);
-      const b = this.spotifyArtists.splice(bIndex, 1)[0];
-      
-      // Ensure they are in the active pool
-      if (!this.allArtists.some(existing => existing.id === b.id)) {
-        this.knownArtists.push(b);
-        this._mergePools();
-      }
-
-      // Pit them against an artist with similar Elo so they have to climb the ladder
-      const a = this._getClosestAnchor(b.id, knownRanked, eloRatings);
-      const pair = Math.random() > 0.5 ? { A: a, B: b } : { A: b, B: a };
-      return { ...pair, strategy: 'spotify_history', insight: '🎧 Listening History: Re-discovering a personal favorite.' };
-    }
-      
-    // 2. The Benchmark Test (~40%): Pit a discovery artist against a top-tier known artist.
-    // This quickly establishes if the discovery is a new favorite or just okay.
-    if (strategyRoll < 0.4 && viableRelated.length > 0 && knownRanked.length > 0) {
-      const b = viableRelated[Math.floor(Math.random() * viableRelated.length)];
-      // Pick a known artist with similar Elo
-      const a = this._getClosestAnchor(b.id, knownRanked, eloRatings);
-      const pair = Math.random() > 0.5 ? { A: a, B: b } : { A: b, B: a };
-      return { ...pair, strategy: 'benchmark', insight: '🎯 Benchmark Test: Can this discovery beat a top favorite?' };
-    }
-
-    // 2. Uncertainty Sampling (~30%): Pit two artists with the closest Elo scores.
-    // This refines the exact ranking boundary between them, providing maximum information gain.
-    if (strategyRoll < 0.7 && viableAll.length > 2) {
-      // Pick a random artist, then find the one closest to them in Elo
-      const a = viableAll[Math.floor(Math.random() * viableAll.length)];
-      const aElo = eloRatings[a.id]?.rating || 1500;
-      
-      let closest = null;
-      let minDiff = Infinity;
-      
-      // Add slight randomness so it's not ALWAYS the exact closest every time
-      for (const candidate of viableAll) {
-        if (candidate.id === a.id || this._hasPlayed(a.id, candidate.id, eloRatings)) continue;
-        const diff = Math.abs((eloRatings[candidate.id]?.rating || 1500) - aElo) + (Math.random() * 30); 
-        if (diff < minDiff) {
-          minDiff = diff;
-          closest = candidate;
-        }
-      }
-      if (closest) {
-        const pair = Math.random() > 0.5 ? { A: a, B: closest } : { A: closest, B: a };
-        return { ...pair, strategy: 'uncertainty', insight: '⚖️ Tie-Breaker: Resolving a close match in your rankings.' };
-      }
-    }
-
-    // 3. Genre Clash (~20%): Pit artists with no overlapping genres.
-    // Tests preference across broad style boundaries to see which "types" win out.
-    if (strategyRoll < 0.9) {
-      const a = viableAll[Math.floor(Math.random() * viableAll.length)];
-      const aGenres = new Set(a.genres || []);
-      
-      const clashCandidates = viableAll.filter(c => {
-        if (c.id === a.id || this._hasPlayed(a.id, c.id, eloRatings)) return false;
-        const cGenres = c.genres || [];
-        return !cGenres.some(g => aGenres.has(g)); // No overlap
-      });
-      
-      if (clashCandidates.length > 0) {
-        const b = clashCandidates[Math.floor(Math.random() * clashCandidates.length)];
-        const pair = Math.random() > 0.5 ? { A: a, B: b } : { A: b, B: a };
-        return { ...pair, strategy: 'clash', insight: '🎸 Genre Clash: Testing your style boundaries.' };
-      }
-    }
-
-    // 4. Fallback: Weighted random (~10% or if strategies fail)
+    // 3. Fallback: Weighted random
     const a = this._pickWeightedArtist();
     const b = this._pickWeightedArtist(a?.id);
     return { A: a, B: b, strategy: 'random', insight: '🎲 Random Pairing: Exploring the outer edges.' };
@@ -708,53 +553,8 @@ export class TasteGame {
       eloSnapshot
     });
 
-    // Handle Beli-style Calibration result
-    if (this.calibrationTask) {
-      const { targetId, mid } = this.calibrationTask;
-      
-      // We need to resolve Elo before continuing the search
-      this.profiler.processGameResult(this.pair.A.id, this.pair.B.id, winnerId, elo, this.pair.A, this.pair.B);
-      
-      if (winnerId === targetId) {
-        // Target won! It's better than mid, so search upper half (index 0 is best)
-        this.calibrationTask.high = mid - 1;
-      } else {
-        // Target lost! It's worse than mid, search lower half
-        this.calibrationTask.low = mid + 1;
-      }
-      
-      if (this.calibrationTask.low > this.calibrationTask.high) {
-        // Binary search complete, settle them exactly into the Elo hierarchy
-        const finalRatings = DataStore.getEloRatings();
-        const knownRanked = this.knownArtists
-          .filter(a => finalRatings[a.id] && a.id !== targetId)
-          .sort((a, b) => finalRatings[b.id].rating - finalRatings[a.id].rating);
-          
-        const insertionIndex = this.calibrationTask.low;
-        let newElo = 1500;
-        
-        if (knownRanked.length > 0) {
-          if (insertionIndex === 0) {
-             newElo = (finalRatings[knownRanked[0]?.id]?.rating || 1500) + 15;
-          } else if (insertionIndex >= knownRanked.length) {
-             newElo = (finalRatings[knownRanked[knownRanked.length - 1]?.id]?.rating || 1500) - 15;
-          } else {
-             const eloAbove = finalRatings[knownRanked[insertionIndex - 1]?.id]?.rating || 1500;
-             const eloBelow = finalRatings[knownRanked[insertionIndex]?.id]?.rating || 1500;
-             newElo = (eloAbove + eloBelow) / 2;
-          }
-        }
-        
-        if (finalRatings[targetId]) {
-          finalRatings[targetId].rating = newElo;
-        }
-        DataStore.setEloRatings(finalRatings);
-        this.calibrationTask = null;
-      }
-    } else {
-      // Normal Elo Update
-      this.profiler.processGameResult(this.pair.A.id, this.pair.B.id, winnerId, elo, this.pair.A, this.pair.B);
-    }
+    // Normal Elo Update
+    this.profiler.processGameResult(this.pair.A.id, this.pair.B.id, winnerId, elo, this.pair.A, this.pair.B);
 
     // Initialize Elo for related artists on first encounter
     const ratings = DataStore.getEloRatings();
@@ -827,10 +627,6 @@ export class TasteGame {
       if (!ratings[artistIdToDrop]) ratings[artistIdToDrop] = { rating: 1500, skips: 0 };
       ratings[artistIdToDrop].skips = (ratings[artistIdToDrop].skips || 0) + 5; // permanently filter them
       ratings[artistIdToDrop].ignored = true; // explicitly mark as "Don't know"
-      
-      if (this.calibrationTask && this.calibrationTask.targetId === artistIdToDrop) {
-        this.calibrationTask = null; // Drop the calibration task if target is unknown
-      }
     } else {
       for (const artist of [this.pair.A, this.pair.B]) {
         if (ratings[artist.id]) {

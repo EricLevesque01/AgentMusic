@@ -437,14 +437,38 @@ export class TasteGame {
     const targetElo = eloRatings[targetId]?.rating || 1500;
     
     // Calculate distance for all valid anchors
+    // KEY FIX: settled top-tier artists (Elo > 1650 AND settled) are blocked from anchoring
+    // against contenders that are far away. A #1 artist at 1800 tells us NOTHING when
+    // compared against a brand-new contender at 1500 — the result is predetermined.
     const candidates = [];
     for (const anchor of knownRanked) {
       if (anchor.id === targetId || this._hasPlayed(targetId, anchor.id, eloRatings)) continue;
-      const anchorElo = eloRatings[anchor.id]?.rating || 1500;
-      candidates.push({ anchor, diff: Math.abs(anchorElo - targetElo) });
+      const anchorData = eloRatings[anchor.id];
+      const anchorElo = anchorData?.rating || 1500;
+      const diff = Math.abs(anchorElo - targetElo);
+      
+      // Block settled top-tier anchors unless the contender is genuinely close to their level
+      if (this._isSettled(anchorData) && anchorElo > 1650 && diff > 200) continue;
+      
+      candidates.push({ anchor, diff });
     }
     
-    if (candidates.length === 0) return knownRanked[Math.floor(Math.random() * knownRanked.length)];
+    // If no suitable anchor found (everyone is top-tier and out of range),
+    // fall back to mid-tier anchors rather than forcing the #1
+    if (candidates.length === 0) {
+      const midTier = knownRanked.filter(a => {
+        const data = eloRatings[a.id];
+        return a.id !== targetId
+          && !this._hasPlayed(targetId, a.id, eloRatings)
+          && !((data?.rating || 1500) > 1650 && this._isSettled(data));
+      });
+      if (midTier.length > 0) {
+        return midTier[Math.floor(Math.random() * Math.min(3, midTier.length))];
+      }
+      // True last resort: any available anchor
+      const any = knownRanked.filter(a => a.id !== targetId && !this._hasPlayed(targetId, a.id, eloRatings));
+      return any[0] || knownRanked[0];
+    }
     
     // Sort by absolute distance and take the top 3 closest
     candidates.sort((a, b) => a.diff - b.diff);

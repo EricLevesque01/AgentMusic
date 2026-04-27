@@ -246,7 +246,51 @@ describe('TasteGame Pairing Logic', () => {
     expect(anchorFrequencies['bot1'] || 0).toBeLessThan(5); // Bot1 shouldn't be picked much since it's far from 1500
   });
 
-  it('12. _getUserGenreAffinities should rank genres by average Elo', () => {
+  it('12. REGRESSION: settled #1 artist should NOT anchor against distant contenders', () => {
+    // Setup: Jeff-like artist at Elo 1800, settled (20 comps, 85% win rate)
+    const ratings = DataStore.getEloRatings();
+    ratings['top1'] = { rating: 1800, comparison_count: 20, wins: 17, losses: 3, matchups: {} };
+    
+    // Contender at 1500 (default) — 300 Elo gap from top1
+    const contender = { id: 'new1', name: 'New 1' };
+    ratings['new1'] = { rating: 1500, comparison_count: 0, matchups: {} };
+    
+    // Build knownRanked with top1 as the #1
+    const knownRanked = [
+      { id: 'top1', name: 'Top 1' }, // settled, Elo 1800 — should be BLOCKED
+      { id: 'mid1', name: 'Mid 1' }, // mid-tier, Elo 1550 — within range
+      { id: 'mid2', name: 'Mid 2' }, // mid-tier, Elo 1500 — within range
+    ];
+    ratings['mid1'] = { rating: 1550, comparison_count: 5, wins: 3, losses: 2, matchups: {} };
+    ratings['mid2'] = { rating: 1500, comparison_count: 4, wins: 2, losses: 2, matchups: {} };
+    
+    // Run 50 anchor selections — top1 (Elo 1800) should NEVER be chosen for a 1500-rated contender
+    const anchorCounts = {};
+    for (let i = 0; i < 50; i++) {
+      const anchor = game._getClosestAnchor('new1', knownRanked, ratings);
+      anchorCounts[anchor.id] = (anchorCounts[anchor.id] || 0) + 1;
+    }
+    
+    // top1 is settled + Elo > 1650 + diff (300) > 200 → must be blocked
+    expect(anchorCounts['top1'] || 0).toBe(0);
+    // mid-tier artists should absorb all selections
+    expect((anchorCounts['mid1'] || 0) + (anchorCounts['mid2'] || 0)).toBe(50);
+  });
+
+  it('13. settled #1 CAN be anchor if the contender has risen close to their level', () => {
+    const ratings = DataStore.getEloRatings();
+    ratings['top1'] = { rating: 1800, comparison_count: 20, wins: 17, losses: 3, matchups: {} };
+    
+    // Contender at 1700 — only 100 Elo gap, within the 200-point threshold
+    const knownRanked = [{ id: 'top1', name: 'Top 1' }];
+    ratings['rising1'] = { rating: 1700, comparison_count: 8, wins: 6, losses: 2, matchups: {} };
+    
+    const anchor = game._getClosestAnchor('rising1', knownRanked, ratings);
+    // top1 is within 200 Elo of this contender → should be a valid anchor
+    expect(anchor.id).toBe('top1');
+  });
+
+  it('14. _getUserGenreAffinities should rank genres by average Elo', () => {
     const ratings = {
       a1: { rating: 1800, genres: ['rock', 'indie'], comparison_count: 5 },
       a2: { rating: 1700, genres: ['rock', 'alternative'], comparison_count: 4 },

@@ -111,16 +111,19 @@ export class ChatPanel {
   _buildPanelHTML() {
     return `
       <!-- Header -->
-      <div style="padding: var(--space-4); border-bottom: 1px solid var(--border-subtle); display: flex; align-items: center; gap: var(--space-3);">
-        <div style="width: 36px; height: 36px; border-radius: 50%; background: var(--gradient-primary); display: flex; align-items: center; justify-content: center; font-size: 1.1rem; flex-shrink: 0;">
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-            <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path>
-          </svg>
+      <div style="padding: var(--space-4); border-bottom: 1px solid var(--border-subtle); display: flex; align-items: center; justify-content: space-between;">
+        <div style="display: flex; align-items: center; gap: var(--space-3);">
+          <div style="width: 36px; height: 36px; border-radius: 50%; background: var(--gradient-primary); display: flex; align-items: center; justify-content: center; font-size: 1.1rem; flex-shrink: 0;">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path>
+            </svg>
+          </div>
+          <div>
+            <div style="font-weight: var(--font-weight-semibold); font-size: var(--font-size-sm);">Agent Music</div>
+            <div style="font-size: 11px; color: var(--text-muted);">Powered by Gemini 2.0 Flash</div>
+          </div>
         </div>
-        <div>
-          <div style="font-weight: var(--font-weight-semibold); font-size: var(--font-size-sm);">Agent Music</div>
-          <div style="font-size: 11px; color: var(--text-muted);">Powered by Gemini 2.0 Flash</div>
-        </div>
+        <button id="chat-close-btn" style="background: none; border: none; color: var(--text-muted); cursor: pointer; font-size: 1.2rem; display: flex; align-items: center; justify-content: center; width: 32px; height: 32px; border-radius: 50%; transition: background 0.2s;" onmouseover="this.style.background='rgba(255,255,255,0.1)'" onmouseout="this.style.background='transparent'">✕</button>
       </div>
 
       <!-- Messages -->
@@ -164,6 +167,11 @@ export class ChatPanel {
   _attachListeners() {
     // Send on button click
     this.panel.addEventListener('click', async (e) => {
+      if (e.target.closest('#chat-close-btn')) {
+        this.toggle();
+        return;
+      }
+      
       if (e.target.closest('#chat-send')) {
         await this._sendMessage();
       }

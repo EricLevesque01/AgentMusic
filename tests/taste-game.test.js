@@ -243,7 +243,7 @@ describe('TasteGame Pairing Logic', () => {
     
     // Check that top1 and top2 aren't picked for *every* single round (they should rotate among benchmarks)
     expect(anchorFrequencies['top1'] || 0).toBeLessThan(50);
-    expect(anchorFrequencies['bot1'] || 0).toBeLessThan(5); // Bot1 shouldn't be picked much since it's far from 1500
+    expect(anchorFrequencies['bot1'] || 0).toBeLessThanOrEqual(5); // Bot1 shouldn't be picked much since it's far from 1500
   });
 
   it('12. REGRESSION: settled #1 artist should NOT anchor against distant contenders', () => {

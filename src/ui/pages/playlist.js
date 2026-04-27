@@ -4,7 +4,7 @@ import { PlaylistView } from '../components/playlist-view.js';
 import { DataStore } from '../../data/data-store.js';
 
 export function renderPlaylistPage(container) {
-  const tasteState = DataStore.get('tasteState') || {};
+  const tasteState = DataStore.load('taste_state') || DataStore.load('tasteState') || {};
   const topGenres = tasteState.topGenres || [];
   const topArtists = tasteState.topRankedArtists || [];
 

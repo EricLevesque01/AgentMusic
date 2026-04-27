@@ -461,9 +461,116 @@ export class TasteGame {
   }
 
   /**
+   * Build a picture of the user's genre affinities from current Elo data.
+   * Returns a Map of genre → { totalElo, count, avgElo } sorted by avgElo desc.
+   */
+  _getUserGenreAffinities(eloRatings) {
+    const genreMap = new Map();
+    for (const [id, data] of Object.entries(eloRatings)) {
+      if (!data.genres || data.comparison_count === 0) continue;
+      for (const genre of data.genres) {
+        const g = genre.toLowerCase();
+        if (!genreMap.has(g)) genreMap.set(g, { totalElo: 0, count: 0 });
+        const entry = genreMap.get(g);
+        entry.totalElo += data.rating || 1500;
+        entry.count += 1;
+      }
+    }
+    // Calculate avgElo and sort by it
+    const sorted = [...genreMap.entries()]
+      .map(([genre, d]) => ({ genre, avgElo: d.totalElo / d.count, count: d.count }))
+      .sort((a, b) => b.avgElo - a.avgElo);
+    return sorted;
+  }
+
+  /**
+   * Select a contender using a weighted multi-strategy approach.
+   * Strategies:
+   *   - taste-adjacent (40%): pick from artists sharing genres with the user's top-rated artists
+   *   - coverage-gap (25%): pick from under-explored genre/era buckets
+   *   - rising-star (20%): pick artists with high early win-rates that need more calibration
+   *   - wild-card (15%): pure least-calibrated for breadth
+   */
+  _selectContender(viableAll, eloRatings) {
+    if (viableAll.length === 0) return null;
+
+    const roll = Math.random();
+    let contender = null;
+
+    // --- Strategy 1: Taste-Adjacent (40%) ---
+    // Find contenders that share genres with the user's highest-rated artists
+    if (roll < 0.40) {
+      const affinities = this._getUserGenreAffinities(eloRatings);
+      const topGenres = new Set(affinities.slice(0, 5).map(a => a.genre));
+
+      if (topGenres.size > 0) {
+        // Score each viable artist by how many of their genres overlap with the user's top genres
+        const scored = viableAll.map(a => {
+          const artistGenres = (a.genres || []).map(g => g.toLowerCase());
+          const overlap = artistGenres.filter(g => topGenres.has(g) || [...topGenres].some(tg => g.includes(tg) || tg.includes(g))).length;
+          return { artist: a, overlap };
+        }).filter(s => s.overlap > 0);
+
+        if (scored.length > 0) {
+          // Sort by overlap (most genre match first), then by fewest comparisons within that
+          scored.sort((a, b) => {
+            if (b.overlap !== a.overlap) return b.overlap - a.overlap;
+            return (eloRatings[a.artist.id]?.comparison_count || 0) - (eloRatings[b.artist.id]?.comparison_count || 0);
+          });
+          const poolSize = Math.min(5, scored.length);
+          contender = scored[Math.floor(Math.random() * poolSize)].artist;
+        }
+      }
+    }
+
+    // --- Strategy 2: Coverage Gap (25%) ---
+    if (!contender && roll < 0.65) {
+      const gap = this._getCoverageGap(eloRatings);
+      if (gap && gap.candidates.length > 0) {
+        const poolSize = Math.min(3, gap.candidates.length);
+        contender = gap.candidates[Math.floor(Math.random() * poolSize)];
+      }
+    }
+
+    // --- Strategy 3: Rising Star (20%) ---
+    // Artists with few comparisons but high win rates — they're promising but need more data
+    if (!contender && roll < 0.85) {
+      const risingStars = viableAll.filter(a => {
+        const data = eloRatings[a.id];
+        if (!data) return false;
+        const comps = data.comparison_count || 0;
+        const wins = data.wins || 0;
+        // Between 2-8 comparisons with a > 50% win rate — promising but uncertain
+        return comps >= 2 && comps <= 8 && (wins / comps) > 0.5;
+      });
+
+      if (risingStars.length > 0) {
+        // Prefer the ones with the fewest comparisons (most uncertain)
+        risingStars.sort((a, b) => (eloRatings[a.id]?.comparison_count || 0) - (eloRatings[b.id]?.comparison_count || 0));
+        const poolSize = Math.min(4, risingStars.length);
+        contender = risingStars[Math.floor(Math.random() * poolSize)];
+      }
+    }
+
+    // --- Strategy 4: Wild Card (15%) / Fallback ---
+    if (!contender) {
+      const sorted = [...viableAll].sort((a, b) =>
+        (eloRatings[a.id]?.comparison_count || 0) - (eloRatings[b.id]?.comparison_count || 0)
+      );
+      const poolSize = Math.min(5, sorted.length);
+      contender = sorted[Math.floor(Math.random() * poolSize)];
+    }
+
+    return contender;
+  }
+
+  /**
    * Active Learning / Strategic Pair Selection
    * Instead of purely random matching, we use strategies to maximize information gain
    * and explore the user's taste boundaries, drawing from active learning principles.
+   *
+   * Contender selection is preference-aware: it considers genre affinity, coverage gaps,
+   * rising stars, and wild-card breadth to ensure every comparison is intentional.
    */
   _selectStrategicPair() {
     const eloRatings = DataStore.getEloRatings();
@@ -473,7 +580,6 @@ export class TasteGame {
 
     // Benchmarks: Known artists sorted by Elo, capped at 2 appearances per session
     // unless they are also an active contender (info gain > 0).
-    // The user requested: "After it shows up 2 times, if it is not a contender, then we don't include it for the rest of the session"
     const knownRanked = this.knownArtists
       .filter(a => {
          const appearances = this.sessionAppearances[a.id] || 0;
@@ -490,25 +596,18 @@ export class TasteGame {
       return { ...pair, strategy: 'injection', insight: '⚔️ Contender: Can this challenger beat your favorites?' };
     }
 
-    // 2. Main Workflow: Contender vs Benchmark
-    // We want to avoid comparing two settled artists. We pit an actively learning contender
-    // against an established benchmark.
+    // 2. Main Workflow: Intentional Contender vs Benchmark
     if (viableAll.length > 0 && knownRanked.length > 0) {
-       // Find the most uncalibrated contenders (fewest comparisons)
-       const contenders = viableAll.sort((a, b) => 
-         (eloRatings[a.id]?.comparison_count || 0) - (eloRatings[b.id]?.comparison_count || 0)
-       );
+       const contender = this._selectContender(viableAll, eloRatings);
        
-       // Pick randomly from the top 5 most uncalibrated to maintain variety
-       const poolSize = Math.min(5, contenders.length);
-       const contender = contenders[Math.floor(Math.random() * poolSize)];
-       
-       // Find a benchmark that is close to the contender's current Elo
-       const anchor = this._getClosestAnchor(contender.id, knownRanked, eloRatings);
-       
-       if (anchor) {
-         const pair = Math.random() > 0.5 ? { A: contender, B: anchor } : { A: anchor, B: contender };
-         return { ...pair, strategy: 'benchmark', insight: '🎯 Benchmark Test: Calibrating against your established favorites.' };
+       if (contender) {
+         // Find a benchmark that is close to the contender's current Elo
+         const anchor = this._getClosestAnchor(contender.id, knownRanked, eloRatings);
+         
+         if (anchor) {
+           const pair = Math.random() > 0.5 ? { A: contender, B: anchor } : { A: anchor, B: contender };
+           return { ...pair, strategy: 'benchmark', insight: '🎯 Calibrating against your established favorites.' };
+         }
        }
     }
 

@@ -245,4 +245,75 @@ describe('TasteGame Pairing Logic', () => {
     expect(anchorFrequencies['top1'] || 0).toBeLessThan(50);
     expect(anchorFrequencies['bot1'] || 0).toBeLessThan(5); // Bot1 shouldn't be picked much since it's far from 1500
   });
+
+  it('12. _getUserGenreAffinities should rank genres by average Elo', () => {
+    const ratings = {
+      a1: { rating: 1800, genres: ['rock', 'indie'], comparison_count: 5 },
+      a2: { rating: 1700, genres: ['rock', 'alternative'], comparison_count: 4 },
+      a3: { rating: 1300, genres: ['pop'], comparison_count: 6 },
+      a4: { rating: 1200, genres: ['pop', 'dance pop'], comparison_count: 3 },
+    };
+    
+    const affinities = game._getUserGenreAffinities(ratings);
+    
+    // indie avg Elo = 1800 (only a1), rock = (1800+1700)/2 = 1750
+    expect(affinities[0].genre).toBe('indie');
+    expect(affinities[0].avgElo).toBe(1800);
+    
+    const rockEntry = affinities.find(a => a.genre === 'rock');
+    expect(rockEntry.avgElo).toBe(1750);
+  });
+
+  it('13. _selectContender should favor taste-adjacent artists when genre data exists', () => {
+    // Set up Elo ratings with genre data
+    const ratings = DataStore.getEloRatings();
+    ratings['top1'].genres = ['rock', 'indie'];
+    ratings['top2'].genres = ['rock', 'alternative'];
+    
+    // Add contenders with different genre profiles
+    const rockContender = { id: 'rock_new', name: 'Rock New', genres: ['rock', 'garage rock'] };
+    const popContender = { id: 'pop_new', name: 'Pop New', genres: ['pop', 'dance pop'] };
+    const jazzContender = { id: 'jazz_new', name: 'Jazz New', genres: ['jazz', 'bebop'] };
+    
+    ratings['rock_new'] = { rating: 1500, comparison_count: 0, matchups: {} };
+    ratings['pop_new'] = { rating: 1500, comparison_count: 0, matchups: {} };
+    ratings['jazz_new'] = { rating: 1500, comparison_count: 0, matchups: {} };
+    
+    game.allArtists.push(rockContender, popContender, jazzContender);
+    
+    // Run 100 selections to verify taste-adjacent is preferred
+    const viableAll = [rockContender, popContender, jazzContender];
+    const selections = {};
+    for (let i = 0; i < 100; i++) {
+      const pick = game._selectContender(viableAll, ratings);
+      selections[pick.id] = (selections[pick.id] || 0) + 1;
+    }
+    
+    // Rock contender should appear significantly more often than jazz,
+    // because rock matches the user's top genre affinities
+    expect(selections['rock_new'] || 0).toBeGreaterThan(selections['jazz_new'] || 0);
+  });
+
+  it('14. _selectContender should still select rising stars with high early win rates', () => {
+    const ratings = DataStore.getEloRatings();
+    
+    // Create a rising star: 3 comparisons, 2 wins (67% WR)
+    const risingStar = { id: 'rising', name: 'Rising Star', genres: [] };
+    ratings['rising'] = { rating: 1580, comparison_count: 3, wins: 2, losses: 1, matchups: {} };
+    
+    // Create a stale contender: 0 comparisons
+    const fresh = { id: 'fresh', name: 'Fresh', genres: [] };
+    ratings['fresh'] = { rating: 1500, comparison_count: 0, matchups: {} };
+    
+    const viableAll = [risingStar, fresh];
+    
+    let risingCount = 0;
+    for (let i = 0; i < 100; i++) {
+      const pick = game._selectContender(viableAll, ratings);
+      if (pick.id === 'rising') risingCount++;
+    }
+    
+    // Rising star should be picked at least sometimes (20% strategy + could be fallback)
+    expect(risingCount).toBeGreaterThan(10);
+  });
 });

@@ -2,7 +2,6 @@ import { describe, it, expect, vi } from 'vitest';
 import { Orchestrator } from '../src/agents/orchestrator.js';
 import { ProfilerAgent } from '../src/agents/profiler-agent.js';
 import { ScoutAgent } from '../src/agents/scout-agent.js';
-import { PlannerAgent } from '../src/agents/planner-agent.js';
 import { CuratorAgent } from '../src/agents/curator-agent.js';
 import { NarratorAgent } from '../src/agents/narrator-agent.js';
 
@@ -29,8 +28,7 @@ describe('Orchestrator', () => {
     const orchestrator = new Orchestrator(statusCallback);
 
     vi.spyOn(ProfilerAgent.prototype, 'buildTasteState').mockResolvedValue(mockTasteState);
-    vi.spyOn(PlannerAgent.prototype, 'createResearchPlan').mockResolvedValue({ strategy: "Test", tool_calls: [] });
-    vi.spyOn(ScoutAgent.prototype, 'executePlan').mockResolvedValue(mockCandidate);
+    vi.spyOn(ScoutAgent.prototype, 'findCandidates').mockResolvedValue(mockCandidate);
     vi.spyOn(CuratorAgent.prototype, 'rankAndSelect').mockReturnValue(mockCandidate);
     vi.spyOn(NarratorAgent.prototype, 'generate').mockReturnValue({
       playlistSummary: 'Test summary',

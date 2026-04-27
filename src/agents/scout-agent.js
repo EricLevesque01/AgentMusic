@@ -1,168 +1,336 @@
+/**
+ * TasteGraph — Scout Agent
+ * "What's Out There" — Discovers candidate tracks by traversing the music graph.
+ *
+ * Perceives: TasteState (Elo rankings, top genres), session intent
+ * Decides:   How many hops to take based on the session's exploration level
+ * Acts:      Builds a CandidatePool with source annotations
+ *
+ * Hop depth is determined by semantic intent analysis:
+ *   Familiar/safe vibes → Hop-0 only (user's own top artists)
+ *   Moderate exploration → Hop-0 + Hop-1 (Last.fm similar artists)
+ *   Adventurous/discover → Hop-0 + Hop-1 + Hop-2 (deep exploration)
+ */
 import { getSimilarArtists, getArtistTags } from '../data/lastfm-api.js';
-import { getArtistTopTracks, getRecommendations, searchTracks, searchArtist, searchTrack } from '../data/spotify-api.js';
+import { getArtistTopTracks, getRecommendations, searchTrack, searchTracks } from '../data/spotify-api.js';
 import { callWithTools } from '../data/gemini-api.js';
+import { DataStore } from '../data/data-store.js';
 
 export class ScoutAgent {
   /**
-   * Executes the Planner's JSON strategy in parallel.
+   * Main entry point. Build a candidate pool from the user's taste graph.
+   * @param {object} tasteState - From ProfilerAgent
+   * @param {string} sessionIntent - Natural language session vibe
+   * @param {object} context    - PipelineContext for inter-agent communication
+   * @returns {Array} CandidatePool
    */
-  async executePlan(plan, tasteState, context) {
-    const candidatePool = [];
-    const seenTrackIds = new Set();
+  async findCandidates(tasteState, sessionIntent, context = null) {
+    const hopDepth  = this.determineHopDepth(sessionIntent);
+
     const { artists, eloRatings } = tasteState;
 
-    if (!plan || !plan.tool_calls) {
-      console.warn("ScoutAgent: No tool_calls found in plan. Returning empty pool.");
-      return candidatePool;
+    // Merge Spotify top artists with any extra artists rated via the Taste Game
+    // (related/discovery artists get added to eloRatings by the game)
+    const allRatedIds = new Set(artists.map(a => a.id));
+    const extraArtists = Object.entries(eloRatings)
+      .filter(([id, data]) => !allRatedIds.has(id) && data.name)
+      .map(([id, data]) => ({ id, name: data.name, genres: data.genres || [], images: data.imageUrl ? [{ url: data.imageUrl }] : [] }));
+
+    const fullArtistPool = [...artists, ...extraArtists];
+
+    // Rank ALL rated artists by Elo for seed priority
+    const rankedArtists = fullArtistPool
+      .slice()
+      .sort((a, b) => (eloRatings[b.id]?.rating || 1500) - (eloRatings[a.id]?.rating || 1500));
+
+    // Expand seeds: top 8 by Elo (up from 5) so game discoveries can seed Hop-0
+    const seedArtists   = rankedArtists.slice(0, 8);
+    const candidatePool = [];
+    const seenTrackIds  = new Set();
+
+    // --- Intent Override: Semantic Search ---
+    if (sessionIntent) {
+      await this._addIntentOverrideTracks(sessionIntent, tasteState, candidatePool, seenTrackIds);
     }
 
-    // Execute all tools concurrently (ReWOO Worker Execution)
-    const promises = plan.tool_calls.map(async (call) => {
-      try {
-        if (call.tool === 'getTopArtists') {
-          const rankedArtists = artists.slice().sort((a,b) => (eloRatings[b.id]?.rating || 1500) - (eloRatings[a.id]?.rating || 1500));
-          await this._addHop0Tracks(rankedArtists.slice(0, 8), candidatePool, seenTrackIds, eloRatings);
-        }
-        else if (call.tool === 'searchArtist' && call.args.query) {
-          const query = Array.isArray(call.args.query) ? call.args.query[0] : call.args.query;
-          const artist = await searchArtist(query);
-          if (artist) {
-            const tracks = await getArtistTopTracks(artist.id);
-            for (const track of tracks.slice(0, 5)) {
-              this._addTrackToPool(track, candidatePool, seenTrackIds, 'planner_searchArtist', 2000);
-            }
-          }
-        }
-        else if (call.tool === 'getSimilarArtists' && call.args.artist) {
-          const artistName = Array.isArray(call.args.artist) ? call.args.artist[0] : call.args.artist;
-          const similar = await getSimilarArtists(artistName, 3);
-          for (const sim of similar) {
-            const artist = await searchArtist(sim.name);
-            if (artist) {
-              const tracks = await getArtistTopTracks(artist.id);
-              for (const track of tracks.slice(0, 3)) {
-                this._addTrackToPool(track, candidatePool, seenTrackIds, 'planner_getSimilarArtists', 1900);
-              }
-            }
-          }
-        }
-        else if (call.tool === 'getRecommendations' && call.args.seed_genres) {
-          const genres = Array.isArray(call.args.seed_genres) ? call.args.seed_genres : [call.args.seed_genres];
-          const options = { seedGenres: genres.slice(0,3).map(g => g.toLowerCase()), limit: 15 };
-          
-          if (call.args.target_features && typeof call.args.target_features === 'object') {
-            Object.assign(options, call.args.target_features);
-          }
-          
-          const recs = await getRecommendations(options);
-          for (const track of recs) {
-            this._addTrackToPool(track, candidatePool, seenTrackIds, 'planner_getRecommendations', 1800);
-          }
-        }
-        else if (call.tool === 'searchTracks' && call.args.query) {
-          const query = Array.isArray(call.args.query) ? call.args.query[0] : call.args.query;
-          const tracks = await searchTracks(query, 10);
-          for (const track of tracks) {
-            this._addTrackToPool(track, candidatePool, seenTrackIds, 'planner_searchTracks', 1700);
-          }
-        }
-        else if (call.tool === 'searchCulturalWeb' && call.args.query) {
-          const query = Array.isArray(call.args.query) ? call.args.query[0] : call.args.query;
-          try {
-            const prompt = `Search the live web for the following query: "${query}". \nFind specific musical artists or tracks mentioned in articles, forums, or reviews. Return ONLY a JSON array of objects with { "artist": "Artist Name", "track": "Track Name" (optional) }. Return maximum 5 items. DO NOT return markdown formatting.`;
-            const { textReply } = await callWithTools(prompt, [{ role: 'user', parts: [{ text: "Search and extract JSON." }] }], [], 'fast', true);
-            
-            let rawText = textReply.trim();
-            if (rawText.startsWith('```json')) rawText = rawText.replace(/```json/g, '').replace(/```/g, '').trim();
-            if (rawText.startsWith('```')) rawText = rawText.replace(/```/g, '').trim();
-            
-            const extractions = JSON.parse(rawText);
-            for (const item of extractions) {
-              if (item.artist && item.track) {
-                const spotifyTrack = await searchTrack(item.track, item.artist);
-                if (spotifyTrack) this._addTrackToPool(spotifyTrack, candidatePool, seenTrackIds, 'planner_searchCulturalWeb', 1850);
-              } else if (item.artist) {
-                const spotifyArtist = await searchArtist(item.artist);
-                if (spotifyArtist) {
-                  const tracks = await getArtistTopTracks(spotifyArtist.id);
-                  for (const t of tracks.slice(0, 2)) {
-                    this._addTrackToPool(t, candidatePool, seenTrackIds, 'planner_searchCulturalWeb', 1850);
-                  }
-                }
-              }
-            }
-          } catch (err) {
-            console.warn(`ScoutAgent: searchCulturalWeb failed:`, err.message);
-          }
-        }
-        else if (call.tool === 'getTrendingSignals') {
-          await this._addTrendingTracks(candidatePool, seenTrackIds);
-        }
-      } catch (err) {
-        console.warn(`ScoutAgent: Worker failed executing ${call.tool}`, err.message);
-      }
-    });
+    // --- Hop 0: Top tracks from top-Elo artists (incl. game discoveries) ---
+    await this._addHop0Tracks(seedArtists, candidatePool, seenTrackIds, eloRatings);
 
-    await Promise.all(promises);
+    // --- Hop 1: Similar artists via Last.fm + Spotify recs ---
+    if (hopDepth >= 1) {
+      await this._addHop1Tracks(seedArtists, tasteState.topGenres, candidatePool, seenTrackIds, eloRatings);
+    }
 
-    // Enrich with Last.fm tags
+    // --- Hop 2: Genre exploration — bias toward coverage gaps if available ---
+    if (hopDepth >= 2) {
+      const gapGenres = (context?.coverageGaps || []).map(g => g.genre);
+      const hop2Genres = gapGenres.length > 0 ? gapGenres : tasteState.topGenres;
+      await this._addHop2Tracks(hop2Genres, seedArtists, candidatePool, seenTrackIds);
+    }
+
+    // --- Local Database: Semantic & Acoustic Matches ---
+    // Query our new Python Local API (running on port 8000)
+    await this._addLocalDatabaseTracks(tasteState, sessionIntent, candidatePool, seenTrackIds);
+
+    // Enrich all candidates with Last.fm tags
     await this._enrichWithTags(candidatePool);
+
+    // Post-filter: remove candidates in genres the user is actively skipping this session
+    const skipGenres = context?.sessionSignals?.skippedGenres || [];
+    if (skipGenres.length > 0) {
+      const skipSet = new Set(skipGenres.map(g => g.toLowerCase()));
+      const before = candidatePool.length;
+      const filtered = candidatePool.filter(c => {
+        const tags = (c.tags || []).map(t => (typeof t === 'object' ? t.name : t).toLowerCase());
+        return !tags.some(t => skipSet.has(t));
+      });
+      // Only apply filter if it doesn't remove everything
+      if (filtered.length >= 5) {
+        candidatePool.length = 0;
+        candidatePool.push(...filtered);
+      }
+    }
 
     return candidatePool;
   }
 
-  _addTrackToPool(track, pool, seen, source, eloScore) {
-    if (!seen.has(track.id)) {
-      seen.add(track.id);
-      pool.push({
-        track,
-        artistName: track.artists?.[0]?.name || '',
-        artistId: track.artists?.[0]?.id || '',
-        source,
-        hopDistance: 1,
-        eloScore,
-        tags: []
-      });
+  /**
+   * Determine hop depth from natural language session intent.
+   */
+  determineHopDepth(sessionIntent) {
+    const intent = (sessionIntent || '').toLowerCase();
+    if (intent.includes('familiar') || intent.includes('favorite') || intent.includes('only my')) return 0;
+    if (intent.includes('new') || intent.includes('discover') || intent.includes('underground') || intent.includes('adventurous')) return 2;
+    return 1;
+  }
+
+  // --- Private: Intent Override ---
+  async _addIntentOverrideTracks(sessionIntent, tasteState, pool, seen) {
+    if (!sessionIntent || sessionIntent.trim() === '') return;
+
+    const topGenres = tasteState.topGenres || [];
+    
+    const prompt = `You are a music discovery agent. The user's current session intent is: "${sessionIntent}". 
+Their top genres are: ${topGenres.join(', ')}. 
+Analyze the intent. You MUST call the 'submit_search_queries' tool.
+If the intent asks for specific genres, vibes, or artists (e.g. "MJ Lenderman", "Jazz", "Alt-country"), provide up to 3 Spotify search queries (e.g. "genre:jazz", "artist:mj lenderman").
+If the intent is generic (e.g., "play my favorites"), call the tool with an empty array for queries.`;
+
+    const toolDecls = [{
+      name: 'submit_search_queries',
+      description: 'Submit search queries to pull targeted tracks.',
+      parameters: {
+        type: 'object',
+        properties: {
+          queries: { type: 'array', items: { type: 'string' } }
+        },
+        required: ['queries']
+      }
+    }];
+
+    try {
+      const result = await callWithTools(prompt, [{ role: 'user', parts: [{ text: 'Extract search queries if needed.' }] }], toolDecls);
+      const submitCall = result.functionCalls.find(fc => fc.name === 'submit_search_queries');
+      if (submitCall && submitCall.args && submitCall.args.queries) {
+        console.log("Scout Intent Override: Extracted queries:", submitCall.args.queries);
+        for (const query of submitCall.args.queries) {
+          try {
+            const tracks = await searchTracks(query, 5);
+            for (const track of tracks) {
+              if (!seen.has(track.id)) {
+                seen.add(track.id);
+                pool.push({
+                  track,
+                  artistName: track.artists?.[0]?.name || '',
+                  artistId: track.artists?.[0]?.id || '',
+                  source: 'intent_override',
+                  hopDistance: 0,
+                  eloScore: 2000, // Artificially high to prioritize these candidates
+                  tags: [],
+                });
+              }
+            }
+          } catch (err) {
+            console.warn(`Scout: Intent search failed for query ${query}`, err.message);
+          }
+        }
+      }
+    } catch (err) {
+      console.warn("Scout: Gemini intent override failed:", err.message);
     }
   }
 
-  // --- Private Helpers ---
+  // --- Private: Hop 0 ---
   async _addHop0Tracks(seedArtists, pool, seen, eloRatings) {
     for (const artist of seedArtists) {
       try {
         const tracks = await getArtistTopTracks(artist.id);
         for (const track of tracks.slice(0, 3)) {
-          this._addTrackToPool(track, pool, seen, 'elo_top', eloRatings[artist.id]?.rating || 1500);
+          if (!seen.has(track.id)) {
+            seen.add(track.id);
+            pool.push({
+              track,
+              artistName:  artist.name,
+              artistId:    artist.id,
+              source:      'elo_top',
+              hopDistance: 0,
+              eloScore:    eloRatings[artist.id]?.rating || 1500,
+              tags:        [],
+            });
+          }
         }
-      } catch (err) {}
+      } catch (err) {
+        console.warn(`Scout: Hop-0 failed for "${artist.name}":`, err.message);
+      }
     }
   }
 
+  // --- Private: Hop 1 ---
+  async _addHop1Tracks(seedArtists, topGenres, pool, seen, eloRatings) {
+    // Collect similar artists from Last.fm for top 3 seeds
+    const similarArtistNames = new Set();
+
+    for (const seed of seedArtists.slice(0, 3)) {
+      const similar = await getSimilarArtists(seed.name, 10);
+      for (const a of similar) {
+        similarArtistNames.add(a.name);
+      }
+    }
+
+    // Use Spotify recommendations with seeds
+    const seedArtistIds = seedArtists.slice(0, 3).map(a => a.id);
+    const seedGenres    = topGenres.slice(0, 2);
+
+    try {
+      const recTracks = await getRecommendations({
+        seedArtists: seedArtistIds,
+        seedGenres,
+        limit: 30,
+      });
+
+      for (const track of recTracks) {
+        if (!seen.has(track.id)) {
+          seen.add(track.id);
+          // Check if this track's artist was among the Last.fm similar results
+          const artistName = track.artists?.[0]?.name || '';
+          const isLastfm   = similarArtistNames.has(artistName);
+          pool.push({
+            track,
+            artistName,
+            artistId:    track.artists?.[0]?.id || '',
+            source:      isLastfm ? 'graph_hop' : 'spotify_rec',
+            hopDistance: 1,
+            eloScore:    1500, // unknown artist
+            tags:        [],
+          });
+        }
+      }
+    } catch (err) {
+      console.warn('Scout: Hop-1 Spotify recs failed:', err.message);
+    }
+  }
+
+  // --- Private: Hop 2 ---
+  async _addHop2Tracks(topGenres, seedArtists, pool, seen) {
+    const explorationGenres = topGenres.slice(2, 7); // genres beyond top 2
+
+    try {
+      const recTracks = await getRecommendations({
+        seedGenres:   explorationGenres.slice(0, 3),
+        seedArtists:  seedArtists.slice(0, 2).map(a => a.id),
+        limit:        30,
+      });
+
+      for (const track of recTracks) {
+        if (!seen.has(track.id)) {
+          seen.add(track.id);
+          pool.push({
+            track,
+            artistName:  track.artists?.[0]?.name || '',
+            artistId:    track.artists?.[0]?.id || '',
+            source:      'genre_explore',
+            hopDistance: 2,
+            eloScore:    1500,
+            tags:        [],
+          });
+        }
+      }
+    } catch (err) {
+      console.warn('Scout: Hop-2 genre exploration failed:', err.message);
+    }
+  }
+
+  // --- Private: Enrich with Last.fm tags ---
   async _enrichWithTags(pool) {
+    // Group by artist to minimize API calls
     const artistsToFetch = [...new Set(pool.map(c => c.artistName))].slice(0, 20);
+
     const tagMap = {};
     for (const name of artistsToFetch) {
       tagMap[name] = await getArtistTags(name);
     }
+
     for (const candidate of pool) {
       candidate.tags = tagMap[candidate.artistName] || [];
     }
   }
 
-  async _addTrendingTracks(pool, seen) {
+  // --- Private: Query Local Python API ---
+  async _addLocalDatabaseTracks(tasteState, sessionIntent, pool, seen) {
     try {
+      // 1. Fetch tracks with deep audio features
+      const res = await fetch('http://127.0.0.1:8000/tracks?limit=20');
+      if (res.ok) {
+        const localTracks = await res.json();
+        for (const t of localTracks) {
+          if (!seen.has(t.spotify_id)) {
+            seen.add(t.spotify_id);
+            pool.push({
+              track: {
+                id: t.spotify_id,
+                name: t.track_name || 'Unknown Track',
+                popularity: 50,
+                artists: [{ name: t.artist_name || 'Unknown Artist', id: '' }]
+              },
+              artistName: t.artist_name || 'Unknown Artist',
+              artistId: '',
+              source: 'local_database',
+              hopDistance: 3, // Out-of-graph discovery
+              eloScore: 1500,
+              tags: [],
+              audioFeatures: {
+                danceability: t.danceability,
+                energy: t.energy,
+                acousticness: t.acousticness
+              }
+            });
+          }
+        }
+      }
+
+      // 2. Fetch Trending Signals (e.g., from Reddit scrapers)
       const trendingRes = await fetch('http://127.0.0.1:8000/trending?limit=5');
       if (trendingRes.ok) {
         const trendingTracks = await trendingRes.json();
         for (const t of trendingTracks) {
+          // These were scraped by name, so we must resolve them to Spotify IDs
           const spotifyTrack = await searchTrack(t.track_name, t.artist_name);
-          if (spotifyTrack) {
-            this._addTrackToPool(spotifyTrack, pool, seen, t.source || 'trending_signal', 1500);
+          if (spotifyTrack && !seen.has(spotifyTrack.id)) {
+            seen.add(spotifyTrack.id);
+            pool.push({
+              track: spotifyTrack,
+              artistName: t.artist_name,
+              artistId: spotifyTrack.artists?.[0]?.id || '',
+              source: t.source || 'trending_signal', // Will say "reddit_r_indieheads"
+              hopDistance: 4, // Wildcard discovery
+              eloScore: 1500,
+              tags: []
+            });
           }
         }
       }
     } catch (err) {
-      console.warn('ScoutAgent: Local trending fetch failed.', err.message);
+      console.warn('Scout: Failed to reach local Python database (is the API running on 8000?)', err.message);
     }
   }
 }

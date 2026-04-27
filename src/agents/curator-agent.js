@@ -16,7 +16,7 @@ export class CuratorAgent {
    * Main entry point for the Agentic Curator.
    * Runs a ReAct loop with Gemini to dynamically research and assemble a playlist.
    */
-  async rankAndSelect(tasteState, candidatePool, sessionIntent, plannerStrategy, onThought = null) {
+  async rankAndSelect(tasteState, candidatePool, sessionIntent, sessionAdjustments = {}, context = null, onThought = null) {
     if (onThought) onThought("Analyzing taste graph and candidate pool...");
     
     const MAX_TRACKS = 20;
@@ -44,21 +44,20 @@ export class CuratorAgent {
       source: c.source || 'unknown'
     }));
 
-    const systemPrompt = `You are a Fast Music Curator Agent acting as a ReWOO Solver.
-Your job is to select exactly ${MAX_TRACKS} tracks from the Candidate Pool that execute the Planner's Strategy and fit the Session Intent.
+    const systemPrompt = `You are a Fast Music Curator Agent.
+Your job is to select exactly ${MAX_TRACKS} tracks from the provided Candidate Pool that best fit the user's Session Intent.
 
-PLANNER STRATEGY: "${plannerStrategy}"
-SESSION INTENT: "${sessionIntent || 'General vibe'}"
-
-USER TASTE PROFILE (ACOUSTIC ANCHORING ONLY):
+USER TASTE PROFILE:
 - Top Artists: ${topArtists}
 - Top Genres: ${topGenres}
-(Do NOT restrict your selection to these top artists unless the Planner explicitly dictates it. They are provided just to understand the user's historical vibe.)
+
+SESSION INTENT: "${sessionIntent || 'General vibe'}"
+(CRITICAL: If the intent specifies a genre or vibe, you MUST prioritize tracks that fit it over the user's top artists. Look at the 'source' field; heavily prioritize tracks marked 'intent_override' or 'trending_signal'!).
 
 RULES:
 1. Select exactly ${MAX_TRACKS} tracks.
 2. Max ${MAX_PER_ARTIST} tracks per artist.
-3. Heavily prioritize tracks from sources like 'planner_searchArtist', 'planner_getSimilarArtists', or 'trending_signal' if they execute the Strategy.
+3. Prioritize tracks with source="intent_override" if they match the Session Intent.
 4. Return ONLY a valid JSON array of objects.
 5. Each object must have:
    - "id": the track ID

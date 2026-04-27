@@ -2,7 +2,6 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { Orchestrator } from '../src/agents/orchestrator.js';
 import { ProfilerAgent } from '../src/agents/profiler-agent.js';
 import { ScoutAgent } from '../src/agents/scout-agent.js';
-import { PlannerAgent } from '../src/agents/planner-agent.js';
 import { CuratorAgent } from '../src/agents/curator-agent.js';
 import { NarratorAgent } from '../src/agents/narrator-agent.js';
 
@@ -62,8 +61,7 @@ const mockCandidate = [{
 
 function setupMocks(orchestrator) {
   vi.spyOn(ProfilerAgent.prototype, 'buildTasteState').mockResolvedValue(mockTasteState);
-  vi.spyOn(PlannerAgent.prototype, 'createResearchPlan').mockResolvedValue({ strategy: "Test", tool_calls: [] });
-  vi.spyOn(ScoutAgent.prototype, 'executePlan').mockResolvedValue(mockCandidate);
+  vi.spyOn(ScoutAgent.prototype, 'findCandidates').mockResolvedValue(mockCandidate);
   vi.spyOn(CuratorAgent.prototype, 'rankAndSelect').mockResolvedValue(mockCandidate);
   vi.spyOn(NarratorAgent.prototype, 'generate').mockResolvedValue({
     playlistSummary: 'A deeply introspective set',
@@ -132,8 +130,7 @@ describe('Orchestrator — _populateTasteProfile', () => {
     };
     vi.spyOn(ProfilerAgent.prototype, 'buildTasteState').mockResolvedValue(fewCompState);
     const orch = new Orchestrator();
-    vi.spyOn(PlannerAgent.prototype, 'createResearchPlan').mockResolvedValue({ strategy: "Test", tool_calls: [] });
-  vi.spyOn(ScoutAgent.prototype, 'executePlan').mockResolvedValue(mockCandidate);
+    vi.spyOn(ScoutAgent.prototype, 'findCandidates').mockResolvedValue(mockCandidate);
     vi.spyOn(CuratorAgent.prototype, 'rankAndSelect').mockResolvedValue(mockCandidate);
     vi.spyOn(NarratorAgent.prototype, 'generate').mockResolvedValue({
       playlistSummary: 'Test', trackExplanations: new Map(),
@@ -148,8 +145,7 @@ describe('Orchestrator — _populateTasteProfile', () => {
     const emptyState = { ...mockTasteState, eloRatings: {} };
     vi.spyOn(ProfilerAgent.prototype, 'buildTasteState').mockResolvedValue(emptyState);
     const orch = new Orchestrator();
-    vi.spyOn(PlannerAgent.prototype, 'createResearchPlan').mockResolvedValue({ strategy: "Test", tool_calls: [] });
-  vi.spyOn(ScoutAgent.prototype, 'executePlan').mockResolvedValue(mockCandidate);
+    vi.spyOn(ScoutAgent.prototype, 'findCandidates').mockResolvedValue(mockCandidate);
     vi.spyOn(CuratorAgent.prototype, 'rankAndSelect').mockResolvedValue(mockCandidate);
     vi.spyOn(NarratorAgent.prototype, 'generate').mockResolvedValue({
       playlistSummary: 'Test', trackExplanations: new Map(),
@@ -257,8 +253,7 @@ describe('Orchestrator — context threading', () => {
 
   it('should pass context as final argument to Scout', async () => {
     const orch = new Orchestrator();
-    vi.spyOn(PlannerAgent.prototype, 'createResearchPlan').mockResolvedValue({ strategy: "Test", tool_calls: [] });
-    const scoutSpy = vi.spyOn(ScoutAgent.prototype, 'executePlan').mockResolvedValue(mockCandidate);
+    const scoutSpy = vi.spyOn(ScoutAgent.prototype, 'findCandidates').mockResolvedValue(mockCandidate);
     vi.spyOn(ProfilerAgent.prototype, 'buildTasteState').mockResolvedValue(mockTasteState);
     vi.spyOn(CuratorAgent.prototype, 'rankAndSelect').mockResolvedValue(mockCandidate);
     vi.spyOn(NarratorAgent.prototype, 'generate').mockResolvedValue({
@@ -278,7 +273,7 @@ describe('Orchestrator — context threading', () => {
   it('should pass context as final argument to Curator', async () => {
     const orch = new Orchestrator();
     vi.spyOn(ProfilerAgent.prototype, 'buildTasteState').mockResolvedValue(mockTasteState);
-    vi.spyOn(ScoutAgent.prototype, 'executePlan').mockResolvedValue(mockCandidate);
+    vi.spyOn(ScoutAgent.prototype, 'findCandidates').mockResolvedValue(mockCandidate);
     const curatorSpy = vi.spyOn(CuratorAgent.prototype, 'rankAndSelect').mockResolvedValue(mockCandidate);
     vi.spyOn(NarratorAgent.prototype, 'generate').mockResolvedValue({
       playlistSummary: 'Test', trackExplanations: new Map(),
@@ -289,15 +284,14 @@ describe('Orchestrator — context threading', () => {
     // Curator: tasteState, candidatePool, sliders, sessionAdjustments, context
     expect(curatorSpy).toHaveBeenCalledTimes(1);
     const callArgs = curatorSpy.mock.calls[0];
-    expect(callArgs.length).toBe(5);
-    expect(typeof callArgs[4]).toBe('function'); // onThought callback
+    expect(callArgs.length).toBe(6);
+    expect(callArgs[4]).toHaveProperty('coverageGaps');
   });
 
   it('should pass context as final argument to Narrator', async () => {
     const orch = new Orchestrator();
     vi.spyOn(ProfilerAgent.prototype, 'buildTasteState').mockResolvedValue(mockTasteState);
-    vi.spyOn(PlannerAgent.prototype, 'createResearchPlan').mockResolvedValue({ strategy: "Test", tool_calls: [] });
-  vi.spyOn(ScoutAgent.prototype, 'executePlan').mockResolvedValue(mockCandidate);
+    vi.spyOn(ScoutAgent.prototype, 'findCandidates').mockResolvedValue(mockCandidate);
     vi.spyOn(CuratorAgent.prototype, 'rankAndSelect').mockResolvedValue(mockCandidate);
     const narratorSpy = vi.spyOn(NarratorAgent.prototype, 'generate').mockResolvedValue({
       playlistSummary: 'Test', trackExplanations: new Map(),

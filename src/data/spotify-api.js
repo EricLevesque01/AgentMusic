@@ -247,6 +247,22 @@ export async function searchTrack(trackName, artistName) {
 }
 
 /**
+ * Search Spotify for tracks using a raw query string.
+ * Returns up to \`limit\` matching tracks.
+ * @param {string} query - Raw query (e.g. "genre:jazz")
+ * @param {number} limit 
+ */
+export async function searchTracks(query, limit = 5) {
+  try {
+    const params = new URLSearchParams({ q: query, type: 'track', limit: String(limit) });
+    const data = await spotifyFetch(`/search?${params}`);
+    return data.tracks?.items || [];
+  } catch {
+    return [];
+  }
+}
+
+/**
  * Get multiple artists by their Spotify IDs (batch, up to 50).
  * @param {string[]} ids
  */

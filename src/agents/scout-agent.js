@@ -12,7 +12,7 @@
  *   Adventurous/discover → Hop-0 + Hop-1 + Hop-2 (deep exploration)
  */
 import { getSimilarArtists, getArtistTags } from '../data/lastfm-api.js';
-import { getArtistTopTracks, getRecommendations, searchTrack } from '../data/spotify-api.js';
+import { getArtistTopTracks, getRecommendations, searchTrack, searchTracks } from '../data/spotify-api.js';
 import { callWithTools } from '../data/gemini-api.js';
 import { DataStore } from '../data/data-store.js';
 
@@ -133,7 +133,7 @@ If their request is generic (e.g., "play my favorites", "give me a mix"), return
       if (submitCall && submitCall.args && submitCall.args.queries) {
         for (const query of submitCall.args.queries) {
           try {
-            const tracks = await searchTrack(query, 5);
+            const tracks = await searchTracks(query, 5);
             for (const track of tracks) {
               if (!seen.has(track.id)) {
                 seen.add(track.id);

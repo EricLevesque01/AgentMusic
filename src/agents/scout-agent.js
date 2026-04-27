@@ -13,6 +13,7 @@
  */
 import { getSimilarArtists, getArtistTags } from '../data/lastfm-api.js';
 import { getArtistTopTracks, getRecommendations, searchTrack } from '../data/spotify-api.js';
+import { callWithTools } from '../data/gemini-api.js';
 import { DataStore } from '../data/data-store.js';
 
 export class ScoutAgent {
@@ -46,6 +47,11 @@ export class ScoutAgent {
     const seedArtists   = rankedArtists.slice(0, 8);
     const candidatePool = [];
     const seenTrackIds  = new Set();
+
+    // --- Intent Override: Semantic Search ---
+    if (sessionIntent) {
+      await this._addIntentOverrideTracks(sessionIntent, tasteState, candidatePool, seenTrackIds);
+    }
 
     // --- Hop 0: Top tracks from top-Elo artists (incl. game discoveries) ---
     await this._addHop0Tracks(seedArtists, candidatePool, seenTrackIds, eloRatings);
@@ -96,6 +102,60 @@ export class ScoutAgent {
     if (intent.includes('familiar') || intent.includes('favorite') || intent.includes('only my')) return 0;
     if (intent.includes('new') || intent.includes('discover') || intent.includes('underground') || intent.includes('adventurous')) return 2;
     return 1;
+  }
+
+  // --- Private: Intent Override ---
+  async _addIntentOverrideTracks(sessionIntent, tasteState, pool, seen) {
+    if (!sessionIntent || sessionIntent.trim() === '') return;
+
+    const topGenres = tasteState.topGenres || [];
+    
+    const prompt = `You are a music discovery agent. The user's current session intent is: "${sessionIntent}". 
+Their top genres are: ${topGenres.join(', ')}. 
+If the user is asking for specific genres, vibes, or artists that are significantly different from their top genres, you MUST call 'submit_search_queries' with up to 3 Spotify search queries (e.g. "genre:jazz", "artist:miles davis") to satisfy their request.
+If their request is generic (e.g., "play my favorites", "give me a mix"), return an empty array.`;
+
+    const toolDecls = [{
+      name: 'submit_search_queries',
+      description: 'Submit search queries to pull targeted tracks.',
+      parameters: {
+        type: 'object',
+        properties: {
+          queries: { type: 'array', items: { type: 'string' } }
+        },
+        required: ['queries']
+      }
+    }];
+
+    try {
+      const result = await callWithTools(prompt, [{ role: 'user', parts: [{ text: 'Extract search queries if needed.' }] }], toolDecls);
+      const submitCall = result.functionCalls.find(fc => fc.name === 'submit_search_queries');
+      if (submitCall && submitCall.args && submitCall.args.queries) {
+        for (const query of submitCall.args.queries) {
+          try {
+            const tracks = await searchTrack(query, 5);
+            for (const track of tracks) {
+              if (!seen.has(track.id)) {
+                seen.add(track.id);
+                pool.push({
+                  track,
+                  artistName: track.artists?.[0]?.name || '',
+                  artistId: track.artists?.[0]?.id || '',
+                  source: 'intent_override',
+                  hopDistance: 0,
+                  eloScore: 2000, // Artificially high to prioritize these candidates
+                  tags: [],
+                });
+              }
+            }
+          } catch (err) {
+            console.warn(\`Scout: Intent search failed for query \${query}\`, err.message);
+          }
+        }
+      }
+    } catch (err) {
+      console.warn("Scout: Gemini intent override failed:", err.message);
+    }
   }
 
   // --- Private: Hop 0 ---

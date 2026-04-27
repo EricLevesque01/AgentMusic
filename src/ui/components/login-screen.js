@@ -42,7 +42,7 @@ export function renderLoginScreen(container) {
           -webkit-background-clip: text;
           -webkit-text-fill-color: transparent;
           background-clip: text;
-        ">TasteGraph</h1>
+        ">Agent Music</h1>
 
         <p style="
           text-align: center;

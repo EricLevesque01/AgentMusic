@@ -27,7 +27,7 @@ export class ChatPanel {
     // Create floating button
     this.fabBtn = document.createElement('button');
     this.fabBtn.id = 'chat-fab';
-    this.fabBtn.setAttribute('aria-label', 'Open Concierge Chat');
+    this.fabBtn.setAttribute('aria-label', 'Open Agent Chat');
     this.fabBtn.innerHTML = '🤖';
     this.fabBtn.style.cssText = `
       position: fixed;
@@ -106,14 +106,14 @@ export class ChatPanel {
       <div style="padding: var(--space-4); border-bottom: 1px solid var(--border-subtle); display: flex; align-items: center; gap: var(--space-3);">
         <div style="width: 36px; height: 36px; border-radius: 50%; background: var(--gradient-primary); display: flex; align-items: center; justify-content: center; font-size: 1.1rem; flex-shrink: 0;">🤖</div>
         <div>
-          <div style="font-weight: var(--font-weight-semibold); font-size: var(--font-size-sm);">Concierge</div>
+          <div style="font-weight: var(--font-weight-semibold); font-size: var(--font-size-sm);">Agent Music</div>
           <div style="font-size: 11px; color: var(--text-muted);">Powered by Gemini 2.0 Flash</div>
         </div>
       </div>
 
       <!-- Messages -->
       <div id="chat-messages" style="flex: 1; overflow-y: auto; padding: var(--space-4); display: flex; flex-direction: column; gap: var(--space-3);">
-        ${this._botBubble("Hi! I'm your music Concierge. Tell me how to tune your playlist — try <em>'more jazz'</em>, <em>'make it chill'</em>, or <em>'why this playlist?'</em>")}
+        ${this._botBubble("Hi! I'm Agent Music. Tell me how to tune your playlist — try <em>'more jazz'</em>, <em>'make it chill'</em>, or <em>'why this playlist?'</em>")}
         
         <!-- Suggestion chips -->
         <div id="suggestion-chips" style="display: flex; flex-wrap: wrap; gap: var(--space-2); margin-top: var(--space-1);">

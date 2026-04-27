@@ -45,8 +45,7 @@ export function createNavBar() {
 
   sidebar.innerHTML = `
     <div class="sidebar-logo">
-      <div class="sidebar-logo-text">TasteGraph</div>
-      <div class="sidebar-logo-sub">Agent Pipeline v2</div>
+      <div class="sidebar-logo-text">Agent Music</div>
     </div>
 
     <div class="sidebar-section-label">Navigation</div>

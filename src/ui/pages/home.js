@@ -47,7 +47,7 @@ export function renderHomePage(container) {
             <circle cx="13" cy="11" r="2"/>
             <path d="M13 9V5l2 1"/>
           </svg>
-          Generate Playlist
+          Playlists
         </button>
         <button class="btn btn-ghost" onclick="location.hash='#/profile'" style="justify-content: flex-start; font-size: var(--font-size-sm);">
           <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0;">

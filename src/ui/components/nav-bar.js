@@ -19,7 +19,7 @@ const NAV_ITEMS = [
     </svg>`,
   },
   {
-    id: 'playlist', label: 'Playlist', hash: '#/playlist',
+    id: 'playlist', label: 'Playlists', hash: '#/playlist',
     icon: `<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
       <path d="M2 4h12M2 8h8M2 12h5"/>
       <circle cx="13" cy="11" r="2"/>

@@ -181,4 +181,27 @@ export class DataStore {
   static clearSessionSignals() {
     this.clear('session_signals');
   }
+
+  // --- Saved Playlists ---
+  static getSavedPlaylists() {
+    return this.load('saved_playlists') || [];
+  }
+
+  static saveGeneratedPlaylist(context) {
+    const playlists = this.getSavedPlaylists();
+    const newPlaylist = {
+      id: Date.now().toString(),
+      createdAt: Date.now(),
+      context: context
+    };
+    playlists.unshift(newPlaylist);
+    this.save('saved_playlists', playlists);
+    return newPlaylist.id;
+  }
+
+  static deleteSavedPlaylist(id) {
+    let playlists = this.getSavedPlaylists();
+    playlists = playlists.filter(p => p.id !== id);
+    this.save('saved_playlists', playlists);
+  }
 }

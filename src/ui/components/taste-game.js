@@ -979,11 +979,11 @@ export class TasteGame {
       return `
         <div style="display:flex;align-items:center;justify-content:space-between;padding:var(--space-3);background:var(--bg-card);border-radius:var(--radius-md);margin-bottom:var(--space-2);">
           <div style="display:flex;align-items:center;gap:var(--space-3);">
-            <span style="font-weight:bold;color:var(--text-muted);width:24px;text-align:center;">${i === 0 ? '👑' : \`#\${i+1}\`}</span>
-            ${a.imageUrl ? \`<img src="\${a.imageUrl}" style="width:40px;height:40px;border-radius:50%;object-fit:cover;">\` : ''}
+            <span style="font-weight:bold;color:var(--text-muted);width:24px;text-align:center;">${i === 0 ? '👑' : `#${i+1}`}</span>
+            ${a.imageUrl ? `<img src="${a.imageUrl}" style="width:40px;height:40px;border-radius:50%;object-fit:cover;">` : ''}
             <div>
               <span style="font-weight:var(--font-weight-medium);">${a.name}</span>
-              ${isNew ? \`<span class="badge badge-green" style="margin-left:6px;">Discovery</span>\` : ''}
+              ${isNew ? `<span class="badge badge-green" style="margin-left:6px;">Discovery</span>` : ''}
             </div>
           </div>
           <span class="badge">${i === 0 ? 'GOAT' : i < 3 ? 'Elite' : i < 7 ? 'Top tier' : 'Great'}</span>

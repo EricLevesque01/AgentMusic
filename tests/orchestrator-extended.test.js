@@ -284,7 +284,7 @@ describe('Orchestrator — context threading', () => {
     // Curator: tasteState, candidatePool, sliders, sessionAdjustments, context
     expect(curatorSpy).toHaveBeenCalledTimes(1);
     const callArgs = curatorSpy.mock.calls[0];
-    expect(callArgs.length).toBe(5);
+    expect(callArgs.length).toBe(6);
     expect(callArgs[4]).toHaveProperty('coverageGaps');
   });
 

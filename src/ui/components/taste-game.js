@@ -716,14 +716,7 @@ export class TasteGame {
     this.container.innerHTML = `
 
 
-      <!-- Stats bar -->
-      <div style="display: flex; justify-content: space-between; align-items: center;
-                  margin-bottom: var(--space-5); padding: var(--space-2) var(--space-4);
-                  background: var(--bg-card); border-radius: var(--radius-md); border: 1px solid var(--border-subtle);">
-        <span style="color: var(--text-muted); font-size: var(--font-size-xs);
-                     text-transform: uppercase; letter-spacing: 0.08em;">Round ${this.roundsPlayed}</span>
-        <span style="color: var(--text-muted); font-size: var(--font-size-xs);">${this.allArtists.length} artists mapped</span>
-      </div>
+
 
       <!-- Match cards -->
       <div style="display: flex; gap: var(--space-8); justify-content: center; flex-wrap: wrap; align-items: stretch; margin-bottom: var(--space-6);">

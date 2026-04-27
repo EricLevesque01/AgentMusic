@@ -40,11 +40,7 @@ export class ProfileView {
     // --- Compute all profile analytics from raw Elo data ---
     const stats = this._computeStats(rankedArtists, tasteState);
 
-    // Agentic Insight Generation
-    const narrator = new NarratorAgent();
-    const agenticProfile = await narrator.generateAgenticProfile(tasteState);
-
-    // Get explicit preferences for memory display
+    // Start rendering the static profile UI immediately
     const prefs = DataStore.getExplicitPreferences();
 
     this.container.innerHTML = `
@@ -78,8 +74,8 @@ export class ProfileView {
           <h2 style="font-size: var(--font-size-base); margin-bottom: var(--space-3); color: var(--text-primary); display: flex; align-items: center; gap: 8px;">
             <span style="color: var(--accent-primary); display: flex; font-size: 18px;">✨</span> Your musical vibe
           </h2>
-          <p style="font-size: 0.95rem; color: var(--text-secondary); line-height: 1.65; position: relative; z-index: 1;">
-            ${agenticProfile}
+          <p id="agentic-profile-text" style="font-size: 0.95rem; color: var(--text-secondary); line-height: 1.65; position: relative; z-index: 1;">
+            <span style="display: flex; gap: 8px; align-items: center; opacity: 0.7;"><span class="spinner" style="width: 14px; height: 14px; border: 2px solid var(--accent-primary); border-top-color: transparent; border-radius: 50%; display: inline-block; animation: spin 1s linear infinite;"></span> The Concierge is analyzing your taste identity...</span>
           </p>
         </div>
 
@@ -127,6 +123,17 @@ export class ProfileView {
     // Draw canvas visualizations
     requestAnimationFrame(() => {
       this._drawRadarChart(stats.genreDistribution);
+    });
+
+    // Fire off async tasks without blocking the UI
+    const narrator = new NarratorAgent();
+    narrator.generateAgenticProfile(tasteState).then(profile => {
+      const el = document.getElementById('agentic-profile-text');
+      if (el) el.innerHTML = profile;
+    }).catch(err => {
+      console.warn('Failed to generate agentic profile:', err);
+      const el = document.getElementById('agentic-profile-text');
+      if (el) el.innerHTML = "Your eclectic taste is too mysterious to analyze right now.";
     });
 
     // Background task: Backfill missing genres via Last.fm for cached Elo ratings

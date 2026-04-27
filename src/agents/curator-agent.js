@@ -9,7 +9,7 @@
 import { callWithTools } from '../data/gemini-api.js';
 import { getArtistMetadata } from '../data/musicbrainz-api.js';
 import { getSimilarArtists } from '../data/lastfm-api.js';
-import { searchTrack, getArtistTopTracks } from '../data/spotify-api.js';
+import { searchTrack, searchArtists, getArtistTopTracks } from '../data/spotify-api.js';
 
 export class CuratorAgent {
   /**
@@ -67,12 +67,12 @@ CULTURAL CONTEXT (from Wikipedia):
 ${wikiText || 'No deep context available — use MusicBrainz to research artists.'}
 
 YOUR RESEARCH STRATEGY (follow this step by step):
-1. START from 2-3 of the user's favorite artists as "seed" anchors.
-2. Use get_similar_artists on each seed to discover RELATED artists the user may not know.
-3. For promising discoveries, use search_musicbrainz to understand their background, era, and genre tags — decide if they fit the session intent.
-4. Use search_spotify_track to find specific tracks from artists that pass your quality check.
-5. Add tracks that genuinely fit the vibe. Explain WHY each track belongs.
-6. REPEAT: use get_similar_artists on your DISCOVERIES to explore further out from the user's core taste. This is how you find truly novel picks.
+1. Evaluate the intent. If the requested task/vibe does NOT match the user's known top artists (e.g. asking for Jazz when they only like Rock), immediately use search_spotify_artists (e.g. query: "genre:jazz") to find relevant starting points.
+2. Otherwise, START from 2-3 of the user's favorite artists as "seed" anchors.
+3. Use get_similar_artists on your seeds or search discoveries to find RELATED artists the user may not know.
+4. For promising discoveries, use search_musicbrainz to verify their background and genre tags fit the constraint.
+5. Use get_artist_top_tracks to find specific tracks, then add_track_to_playlist. Explain WHY each track belongs.
+6. REPEAT: explore further out from your discoveries to find truly novel picks.
 
 CRITICAL RULES:
 - You MUST use tools to discover and verify. Do not hallucinate track names.
@@ -116,6 +116,15 @@ CRITICAL RULES:
           type: 'object',
           properties: { track_name: { type: 'string' }, artist_name: { type: 'string' } },
           required: ['track_name', 'artist_name']
+        }
+      },
+      {
+        name: 'search_spotify_artists',
+        description: 'Search for artists by genre, vibe, or name (e.g. query: "genre:jazz", "jazz", "electronic"). Use this to find new seed artists when the user\'s top artists do not match the session intent (e.g., they ask for Jazz but only listen to Rock).',
+        parameters: {
+          type: 'object',
+          properties: { query: { type: 'string' } },
+          required: ['query']
         }
       },
       {
@@ -220,6 +229,16 @@ CRITICAL RULES:
                 result = `Found: "${track.name}" by ${track.artists?.map(a=>a.name).join(', ')} (ID: ${track.id}). Album: ${track.album?.name || 'Unknown'}.`;
               } else {
                 result = `"${args.track_name}" by ${args.artist_name} not found on Spotify. Try get_artist_top_tracks to see what's available.`;
+              }
+            } 
+            else if (call.name === 'search_spotify_artists') {
+              const results = await searchArtists(args.query, 5);
+              if (results && results.length > 0) {
+                result = `Artists matching query "${args.query}":\n` + results.map((a, i) => 
+                  `${i+1}. ${a.name} (Genres: ${(a.genres||[]).slice(0,3).join(', ')})`
+                ).join('\n') + '\n\nUse get_similar_artists, get_artist_top_tracks, or search_musicbrainz on these discoveries.';
+              } else {
+                result = `No artists found matching "${args.query}". Try a different search query or genre term.`;
               }
             } 
             else if (call.name === 'add_track_to_playlist') {

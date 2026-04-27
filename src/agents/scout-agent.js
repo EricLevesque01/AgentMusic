@@ -149,7 +149,7 @@ If their request is generic (e.g., "play my favorites", "give me a mix"), return
               }
             }
           } catch (err) {
-            console.warn(\`Scout: Intent search failed for query \${query}\`, err.message);
+            console.warn(`Scout: Intent search failed for query ${query}`, err.message);
           }
         }
       }

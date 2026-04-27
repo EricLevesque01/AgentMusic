@@ -9,7 +9,7 @@
 const GEMINI_API_KEY = 'AIzaSyDpa2Gq6KeFiUUxO2a_zNctLMZlA9HnyuU';
 const MODELS = {
   fast: 'gemini-2.0-flash',
-  reasoning: 'gemini-1.5-pro'
+  reasoning: 'gemini-2.0-flash'
 };
 
 /**
@@ -32,7 +32,7 @@ export async function callWithTools(systemPrompt, messages, toolDeclarations = [
       : undefined,
     generationConfig: {
       temperature:     0.7,
-      maxOutputTokens: 512,
+      maxOutputTokens: toolDeclarations.length > 0 ? 2048 : 512,
     },
   };
 

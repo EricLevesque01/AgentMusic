@@ -29,7 +29,7 @@ export class PlaylistView {
           <div style="flex:1;">
             <div class="section-label" style="margin-bottom:var(--space-1);">Playlist Summary</div>
             <p style="color:var(--text-secondary);font-size:var(--font-size-sm);
-                      font-style:italic;">${explanations.playlistSummary}</p>
+                      font-style:italic;">${explanations?.playlistSummary || 'Curated by the Agent Music pipeline based on your taste profile.'}</p>
           </div>
           <button id="btn-save-spotify" class="btn btn-sm"
                   style="background:#1DB954;color:#000;border-color:#1DB954;flex-shrink:0;font-weight:700;">
@@ -73,7 +73,8 @@ export class PlaylistView {
   }
 
   _renderTrack(candidate, index, explanations) {
-    const { track, artistName, dominantFactor, finalScore, breakdown, hopDistance } = candidate;
+    const { track, artistName, dominantFactor, finalScore, breakdown = {}, hopDistance } = candidate;
+    if (!track) return ''; // Safety: skip invalid entries
     const albumImg = track.album?.images?.[0]?.url;
 
     const factorColors = {
@@ -172,8 +173,8 @@ export class PlaylistView {
     if (!inspector) return;
     document.body.classList.add('inspector-open');
 
-    const { track, artistName, dominantFactor, finalScore, breakdown, hopDistance, tags } = candidate;
-    const explanation = explanations.trackExplanations.get(track.id) || 'No explanation available.';
+    const { track, artistName, dominantFactor, finalScore, breakdown = {}, hopDistance, tags } = candidate;
+    const explanation = explanations?.trackExplanations?.get(track.id) || 'No explanation available.';
     const albumImg = track.album?.images?.[0]?.url;
     const scorePercent = Math.round(finalScore * 100);
     const hopLabel = ['Direct', 'Hop ×1', 'Hop ×2'][hopDistance] ?? '—';

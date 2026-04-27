@@ -18,7 +18,9 @@ export class CuratorAgent {
    */
   async rankAndSelect(tasteState, candidatePool, sessionIntent, sessionAdjustments = {}, context = null) {
     const playlist = [];
-    const MAX_TRACKS = 10;
+    const MAX_TRACKS = 25;
+    const MAX_PER_ARTIST = 3;
+    const artistCounts = {}; // track per-artist count
     
     // Convert top genres and favorite artists into a prompt
     const topGenres = (tasteState.topGenres || []).slice(0, 5).join(', ');
@@ -74,8 +76,10 @@ You can:
 CRITICAL RULES:
 - Only use REAL artists and tracks. Use the tools to verify they exist before adding.
 - You must add exactly ${MAX_TRACKS} tracks.
+- MAXIMUM ${MAX_PER_ARTIST} tracks per artist to ensure variety. Spread across many artists.
 - After adding ${MAX_TRACKS} tracks, call the 'finish_playlist' tool.
-- Think step-by-step. Research an artist, verify their tracks, then add them.`;
+- Think step-by-step. Research an artist, find similar artists, verify tracks, then add them.
+- Work in batches: research 3-4 artists, add their best tracks, then move to the next batch.`;
 
     const tools = [
       {
@@ -129,8 +133,8 @@ CRITICAL RULES:
     let messages = [{ role: 'user', parts: [{ text: 'Begin curating the playlist.' }] }];
     let finished = false;
     let loopCount = 0;
-    const MAX_LOOPS = 15;
-    const TIMEOUT_MS = 30000; // 30s global timeout
+    const MAX_LOOPS = 40;
+    const TIMEOUT_MS = 60000; // 60s for larger playlists
     const trackCache = {};
 
     if (sessionAdjustments.injectedQueue && sessionAdjustments.injectedQueue.length > 0) {
@@ -186,6 +190,8 @@ CRITICAL RULES:
             else if (call.name === 'add_track_to_playlist') {
               if (playlist.some(t => t.track.id === args.track_id)) {
                 result = "Track already in playlist. Pick a different one.";
+              } else if ((artistCounts[args.artist_name] || 0) >= MAX_PER_ARTIST) {
+                result = `Already have ${MAX_PER_ARTIST} tracks from ${args.artist_name}. Pick a different artist for variety.`;
               } else {
                 const fullTrack = trackCache[args.track_id] || { id: args.track_id, name: args.track_name };
                 playlist.push({
@@ -197,7 +203,8 @@ CRITICAL RULES:
                   dominantFactor: args.reason,
                   tags: []
                 });
-                result = `Track '${args.track_name}' added. Playlist size: ${playlist.length}/${MAX_TRACKS}.`;
+                artistCounts[args.artist_name] = (artistCounts[args.artist_name] || 0) + 1;
+                result = `Track '${args.track_name}' added. Playlist size: ${playlist.length}/${MAX_TRACKS}. (${artistCounts[args.artist_name]}/${MAX_PER_ARTIST} from ${args.artist_name})`;
               }
             } 
             else if (call.name === 'finish_playlist') {

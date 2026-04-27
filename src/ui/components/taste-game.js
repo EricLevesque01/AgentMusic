@@ -596,14 +596,15 @@ export class TasteGame {
     this.isLoading = true;
     this.pair = pair;
 
-    // Fetch top tracks for audio previews
+    // Fetch top tracks for audio previews only if needed
     try {
-      const [tracksA, tracksB] = await Promise.all([
-        getArtistTopTracks(pair.A.id),
-        getArtistTopTracks(pair.B.id)
-      ]);
-      pair.A.previewTrack = tracksA.find(t => t.preview_url) || tracksA[0];
-      pair.B.previewTrack = tracksB.find(t => t.preview_url) || tracksB[0];
+      const fetchA = !pair.A.previewTrack ? getArtistTopTracks(pair.A.id) : Promise.resolve(null);
+      const fetchB = !pair.B.previewTrack ? getArtistTopTracks(pair.B.id) : Promise.resolve(null);
+      
+      const [tracksA, tracksB] = await Promise.all([fetchA, fetchB]);
+      
+      if (tracksA) pair.A.previewTrack = tracksA.find(t => t.preview_url) || tracksA[0];
+      if (tracksB) pair.B.previewTrack = tracksB.find(t => t.preview_url) || tracksB[0];
     } catch (err) {
       console.warn("Failed to load audio previews:", err);
     }

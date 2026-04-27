@@ -291,6 +291,10 @@ export class TasteGame {
    */
   _getInfoGainWeight(eloData) {
     if (!eloData) return 3; // Never compared = maximum weight
+    
+    // If skipped excessively (user doesn't know them), they are dead to us.
+    if ((eloData.skips || 0) >= 3 && (eloData.comparison_count || 0) === 0) return 0;
+    
     const comps = eloData.comparison_count || 0;
     if (comps === 0) return 3;
 

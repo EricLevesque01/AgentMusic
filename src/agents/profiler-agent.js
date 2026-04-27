@@ -284,6 +284,12 @@ export class ProfilerAgent {
       ratings[artistBId].ties = (ratings[artistBId].ties || 0) + 1;
     }
 
+    // Record the matchup to prevent exact repeats
+    if (!ratings[artistAId].matchups) ratings[artistAId].matchups = {};
+    if (!ratings[artistBId].matchups) ratings[artistBId].matchups = {};
+    ratings[artistAId].matchups[artistBId] = true;
+    ratings[artistBId].matchups[artistAId] = true;
+
     DataStore.setEloRatings(ratings);
     return ratings;
   }

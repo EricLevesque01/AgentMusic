@@ -58,10 +58,10 @@ EXPLICIT RULES:
 - Preferred Decades: ${(tasteState.explicitPreferences?.preferred_decades || []).join(', ') || 'Any'}
 - Concierge Memories: ${(tasteState.explicitPreferences?.agent_memories || []).join('; ') || 'None'}
 
-SESSION INTENT: "${sessionIntent || 'General playlist based on my taste'}"
+SESSION INTENT / TASK: "${sessionIntent || 'General playlist based on my taste'}"
+(Treat this intent as a strict directive. If it is a specific task—like "find songs with horns", "give me 5 tracks from the 90s"—you MUST execute that exact task using your tools, while still ensuring it aligns with their Taste Profile.)
 
 ${skippedGenres.length > 0 ? `SESSION FEEDBACK: User skipped ${skippedGenres.join(', ')} tracks recently. Deprioritize.` : ''}
-${underExplored.length > 0 ? `TASTE GAPS: Under-explored genres to consider: ${underExplored.join(', ')}.` : ''}
 
 CULTURAL CONTEXT (from Wikipedia):
 ${wikiText || 'No deep context available — use MusicBrainz to research artists.'}

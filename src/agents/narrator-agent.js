@@ -100,7 +100,7 @@ Analyze the tracks and the MusicBrainz data. Call the 'submit_explanations' tool
     }];
 
     try {
-      const result = await callWithTools(systemPrompt, [], toolDeclarations);
+      const result = await callWithTools(systemPrompt, [{ role: 'user', parts: [{ text: 'Generate the playlist narrative.' }] }], toolDeclarations);
       const submitCall = result.functionCalls.find(fc => fc.name === 'submit_explanations');
       
       if (submitCall && submitCall.args) {

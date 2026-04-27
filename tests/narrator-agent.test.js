@@ -37,14 +37,16 @@ describe('NarratorAgent', () => {
   const narrator = new NarratorAgent();
 
   it('should return empty for empty playlist', async () => {
-    const { playlistSummary } = await narrator.generate([], tasteState, sliders);
+    const { playlistSummary, trackExplanations } = await narrator.generate([], tasteState, sliders);
     expect(playlistSummary).toBe('No tracks to explain.');
+    expect(trackExplanations.size).toBe(0);
   });
 
-  it('should produce a non-empty playlist summary', async () => {
-    const { playlistSummary } = await narrator.generate(mockPlaylist('graph'), tasteState, sliders);
-    expect(typeof playlistSummary).toBe('string');
-    expect(playlistSummary.length).toBeGreaterThan(10);
+  it('should generate one explanation per track', async () => {
+    const playlist = mockPlaylist('elo');
+    const { trackExplanations } = await narrator.generate(playlist, tasteState, sliders);
+    expect(trackExplanations.size).toBe(1);
+    expect(trackExplanations.has('t1')).toBe(true);
   });
 
   it('should produce a non-empty playlist summary', async () => {
@@ -55,9 +57,10 @@ describe('NarratorAgent', () => {
 
   it('should generate explanations for each dominant factor type', async () => {
     for (const factor of ['elo', 'graph', 'audio', 'session']) {
-      const { playlistSummary } = await narrator.generate(mockPlaylist(factor), tasteState, sliders);
-      expect(typeof playlistSummary).toBe('string');
-      expect(playlistSummary.length).toBeGreaterThan(10);
+      const { trackExplanations } = await narrator.generate(mockPlaylist(factor), tasteState, sliders);
+      const explanation = trackExplanations.get('t1');
+      expect(typeof explanation).toBe('string');
+      expect(explanation.length).toBeGreaterThan(10);
     }
   });
 

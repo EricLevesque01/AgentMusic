@@ -4,23 +4,6 @@ import { PlaylistView } from '../components/playlist-view.js';
 import { DataStore } from '../../data/data-store.js';
 
 export function renderPlaylistPage(container) {
-  const tasteState = DataStore.load('taste_state') || DataStore.load('tasteState') || {};
-  const topGenres = tasteState.topGenres || [];
-  const topArtists = tasteState.topRankedArtists || [];
-
-  const topGenre = topGenres.length > 0 ? topGenres[0] : 'midwest emo';
-  const topArtist = topArtists.length > 0 ? topArtists[0].name : 'Charli XCX';
-  const secondArtist = topArtists.length > 1 ? topArtists[1].name : 'Radiohead';
-
-  const placeholders = [
-    `e.g. 'Find me ${topGenre} bands blowing up on Reddit'`,
-    `e.g. 'Aggressive hype music like ${topArtist}'`,
-    `e.g. 'Deep cuts from the golden era of ${topGenre}'`,
-    `e.g. 'What are ${topArtist} and ${secondArtist} fans listening to right now?'`,
-    `e.g. 'Just play my favorites...'`
-  ];
-  const randomPlaceholder = placeholders[Math.floor(Math.random() * placeholders.length)];
-
   container.innerHTML = `
     <div class="page" id="page-playlist">
       <header class="page-header" style="display:flex; justify-content:space-between; align-items:center;">
@@ -30,11 +13,11 @@ export function renderPlaylistPage(container) {
 
       <div id="generator-section" style="display:none; background:var(--bg-card); padding:var(--space-5); border-radius:var(--radius-lg); border: 1px solid var(--border-subtle); margin-bottom:var(--space-6);">
         <h3 style="margin-bottom:var(--space-2); font-size:var(--font-size-lg); display: flex; align-items: center; gap: 8px;">
-          <span style="color: var(--accent-primary); font-size: 24px;">✨</span> Direct the Agents
+          <span style="color: var(--accent-primary); font-size: 24px;">✨</span> What's the vibe?
         </h3>
-        <p style="color: var(--text-muted); font-size: var(--font-size-sm); margin-bottom: var(--space-4);">Tell your intelligent music agents what to look for. They can search the web, analyze forums, and deep-dive into niche genres.</p>
+        <p style="color: var(--text-muted); font-size: var(--font-size-sm); margin-bottom: var(--space-4);">Tell the agents exactly what kind of playlist you want right now.</p>
         
-        <textarea id="vibe-input" rows="3" placeholder="${randomPlaceholder}" 
+        <textarea id="vibe-input" rows="3" placeholder="e.g. 'Late night driving', 'Focusing on work, no lyrics', or 'Just play my S-Tier favorites...'" 
           style="width: 100%; background: var(--bg-surface); border: 1px solid var(--border-glass); border-radius: var(--radius-md); padding: var(--space-3); color: var(--text-primary); font-family: var(--font-family); font-size: var(--font-size-md); resize: none; margin-bottom: var(--space-4); outline: none; transition: border-color var(--transition-fast);"
           onfocus="this.style.borderColor='var(--accent-primary)'" onblur="this.style.borderColor='var(--border-glass)'"></textarea>
 

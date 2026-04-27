@@ -23,6 +23,7 @@ export class NarratorAgent {
     if (!scoredPlaylist || scoredPlaylist.length === 0) {
       return {
         playlistSummary: 'No tracks to explain.',
+        trackExplanations: new Map(),
       };
     }
 
@@ -51,7 +52,6 @@ export class NarratorAgent {
     const anchoredArtist = context?.tasteProfile?.anchoredTopArtist;
     const underExplored = context?.tasteProfile?.underExploredGenres || [];
     const skippedGenres = context?.sessionSignals?.skippedGenres || [];
-    const plannerStrategy = context?.researchPlan?.strategy || 'Exploration driven by general taste.';
 
     // 4. Build the prompt
     const systemPrompt = `You are the Narrator for TasteGraph, a sophisticated music engine.
@@ -63,7 +63,6 @@ Current user taste (Calibrated via Active Learning):
 ${anchoredArtist ? `- North Star: ${anchoredArtist} is the user's confirmed #1. Reference their sound when explaining why tracks fit.` : ''}
 
 Session intent: "${sessionIntent}"
-Agent Strategy: "${plannerStrategy}"
 ${skippedGenres.length > 0 ? `Note: The user skipped ${skippedGenres.join(', ')} tracks earlier. If you kept one anyway, explain why it's different.` : ''}
 ${underExplored.length > 0 ? `Note: Tracks in ${underExplored.join(', ')} are there to expand the user's taste map into areas they haven't explored much yet. Frame these as discoveries.` : ''}
 
@@ -75,7 +74,8 @@ ${mbDataStr.join('\n') || 'None available.'}
 
 Analyze the tracks and the MusicBrainz data. Call the 'submit_explanations' tool with:
 1. A creative, catchy 2-5 word 'playlistTitle'.
-2. A short, cohesive paragraph (2-4 sentences) 'playlistSummary' that EXPLAINS the agentic reasoning behind this mix. Tell the user *why* we picked these tracks based on the Agent Strategy and Session Intent. Do not just say "we picked this based on your taste"—actually explain the vibe, the strategy, and what connects these specific tracks to their query.`;
+2. A concise 1-sentence 'playlistSummary' describing the overall vibe and origins of the music.
+3. An array of 'trackExplanations', where each object has the trackId and a 1-sentence explanation of why it fits. If a track's source is a 'trending_signal' (like Reddit), YOU MUST explicitly mention that it is currently trending in cultural spaces alongside fitting their taste.`;
 
     const toolDeclarations = [{
       name: 'submit_explanations',
@@ -84,9 +84,20 @@ Analyze the tracks and the MusicBrainz data. Call the 'submit_explanations' tool
         type: 'object',
         properties: {
           playlistTitle: { type: 'string' },
-          playlistSummary: { type: 'string' }
+          playlistSummary: { type: 'string' },
+          trackExplanations: {
+            type: 'array',
+            items: {
+              type: 'object',
+              properties: {
+                trackId: { type: 'string' },
+                explanation: { type: 'string' }
+              },
+              required: ['trackId', 'explanation']
+            }
+          }
         },
-        required: ['playlistTitle', 'playlistSummary']
+        required: ['playlistTitle', 'playlistSummary', 'trackExplanations']
       }
     }];
 
@@ -95,9 +106,14 @@ Analyze the tracks and the MusicBrainz data. Call the 'submit_explanations' tool
       const submitCall = result.functionCalls.find(fc => fc.name === 'submit_explanations');
       
       if (submitCall && submitCall.args) {
+        const trackMap = new Map();
+        for (const item of submitCall.args.trackExplanations || []) {
+          trackMap.set(item.trackId, item.explanation);
+        }
         return {
           playlistTitle: submitCall.args.playlistTitle || 'Curated Playlist',
-          playlistSummary: submitCall.args.playlistSummary || 'Our agents orchestrated this mix to align with your intent and current listening vectors.'
+          playlistSummary: submitCall.args.playlistSummary || 'A custom mix based on your taste graph.',
+          trackExplanations: trackMap
         };
       }
     } catch (err) {
@@ -105,9 +121,14 @@ Analyze the tracks and the MusicBrainz data. Call the 'submit_explanations' tool
     }
 
     // Fallback if LLM fails
+    const fallbackMap = new Map();
+    for (const c of scoredPlaylist) {
+      fallbackMap.set(c.track.id, `Selected due to its strong ${c.dominantFactor} affinity with your profile.`);
+    }
     return {
       playlistTitle: 'Curated Mix',
-      playlistSummary: `Our agents orchestrated these ${scoredPlaylist.length} tracks to align with your intent and current listening vectors.`,
+      playlistSummary: `A custom mix of ${scoredPlaylist.length} tracks based on your taste graph.`,
+      trackExplanations: fallbackMap,
     };
   }
 
@@ -154,7 +175,7 @@ CRITICAL RULES:
 3. USE THE DISLIKES: If they have 'Actively Dismissed' artists, playfully roast them for what they reject (e.g., "I know you can't stand the over-produced sheen of...").
 4. BE BOLD & SPECIFIC: Use a highly specific, metaphorical example. For instance, "Your taste feels like you're trying to recreate the exact feeling of walking home in the rain in 2005 listening to [Artist A], but with the bass of [Artist B]."
 5. LENGTH & STRUCTURE: Write 3 to 4 substantial paragraphs. Make it feel like a meaningful, deep-dive text message or conversation. Do not use generic fluff like "You have a diverse mix of sounds."
-6. Do not use markdown. Do NOT start your response with "Your musical vibe" or any titles. Just write the plain text paragraphs.`;
+6. Do not use markdown, just write the plain text paragraphs.`;
 
     try {
       const result = await callWithTools(prompt, [{ role: 'user', parts: [{text: 'Analyze my taste identity.'}] }], [], 'reasoning');
@@ -179,7 +200,7 @@ CRITICAL RULES:
     else if (fallbackGenresList.length > 5) vibe = "Broad & Experimental";
 
     if (fallbackArtists && fallbackGenres) {
-      return `I've always noticed you gravitate toward ${fallbackGenres}. It's so classic you to keep artists like ${fallbackArtists} in heavy rotation. Your taste feels like you're trying to recreate the exact feeling of discovering those core sounds, but you're not afraid to mix it up. Your sonic identity is unmistakably yours—it feels less like an algorithm and more like a handwritten mixtape you've been putting together for years.`;
+      return `<strong>Your musical vibe: ${vibe}</strong><br><br>I've always noticed you gravitate toward ${fallbackGenres}. It's so classic you to keep artists like ${fallbackArtists} in heavy rotation. Your taste feels like you're trying to recreate the exact feeling of discovering those core sounds, but you're not afraid to mix it up. Your sonic identity is unmistakably yours—it feels less like an algorithm and more like a handwritten mixtape you've been putting together for years.`;
     }
 
     return "You have an eclectic blend of sonic textures. Based on your current trajectory, you seem to be searching for something rhythmic and adventurous, pushing the boundaries of what you normally keep on repeat.";

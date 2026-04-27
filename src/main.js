@@ -10,6 +10,7 @@ import { renderGamePage } from './ui/pages/game.js';
 import { renderPlaylistPage } from './ui/pages/playlist.js';
 import { renderProfilePage } from './ui/pages/profile.js';
 import { renderLoginScreen } from './ui/components/login-screen.js';
+import { ChatPanel } from './ui/components/chat-panel.js';
 import { handleCallback, isAuthenticated, clearTokens } from './auth/spotify-auth.js';
 import { Orchestrator } from './agents/orchestrator.js';
 import { SessionDJAgent } from './agents/session-dj-agent.js';
@@ -147,7 +148,13 @@ async function init() {
     });
     window.TG.dj = dj;
 
-    window.TG.dj = dj;
+    // Mount Concierge Chat Panel
+    const chatPanel = new ChatPanel(
+      orchestrator,
+      () => window.TG.lastContext || null,
+    );
+    chatPanel.mount(app);
+    window.TG.chatPanel = chatPanel;
   }
 
   // Set up routing

@@ -13,11 +13,11 @@ export function renderPlaylistPage(container) {
 
       <div id="generator-section" style="display:none; background:var(--bg-card); padding:var(--space-5); border-radius:var(--radius-lg); border: 1px solid var(--border-subtle); margin-bottom:var(--space-6);">
         <h3 style="margin-bottom:var(--space-2); font-size:var(--font-size-lg); display: flex; align-items: center; gap: 8px;">
-          <span style="color: var(--accent-primary); font-size: 24px;">✨</span> What's the vibe?
+          <span style="color: var(--accent-primary); font-size: 24px;">✨</span> Direct the Agents
         </h3>
-        <p style="color: var(--text-muted); font-size: var(--font-size-sm); margin-bottom: var(--space-4);">Tell the agents exactly what kind of playlist you want right now.</p>
+        <p style="color: var(--text-muted); font-size: var(--font-size-sm); margin-bottom: var(--space-4);">Tell your intelligent music agents what to look for. They can search the web, analyze forums, and deep-dive into niche genres.</p>
         
-        <textarea id="vibe-input" rows="3" placeholder="e.g. 'Late night driving', 'Focusing on work, no lyrics', or 'Just play my S-Tier favorites...'" 
+        <textarea id="vibe-input" rows="3" placeholder="e.g. 'Find me midwest emo bands blowing up on Reddit', 'Aggressive hype music like Charli XCX', or 'Just play my favorites...'" 
           style="width: 100%; background: var(--bg-surface); border: 1px solid var(--border-glass); border-radius: var(--radius-md); padding: var(--space-3); color: var(--text-primary); font-family: var(--font-family); font-size: var(--font-size-md); resize: none; margin-bottom: var(--space-4); outline: none; transition: border-color var(--transition-fast);"
           onfocus="this.style.borderColor='var(--accent-primary)'" onblur="this.style.borderColor='var(--border-glass)'"></textarea>
 

@@ -140,6 +140,45 @@ export class Orchestrator {
         }
         break;
 
+      case 'create_playlist':
+        // Generate a new playlist with the requested theme
+        // Default sliders based on the theme (could be enhanced with LLM parsing later)
+        const newSliders = {
+          discovery: action.theme.toLowerCase().includes('new') || action.theme.toLowerCase().includes('indie') ? 0.8 : 0.5,
+          energy: action.theme.toLowerCase().includes('workout') || action.theme.toLowerCase().includes('heavy') ? 0.9 : 0.5,
+          popularity: action.theme.toLowerCase().includes('underground') ? 0.8 : 0.5,
+          focus: 0.5,
+          novelty: 0.5,
+        };
+        // Trigger a full pipeline run
+        return this.generatePlaylist(this._lastContext?.userId || 'default_user', newSliders);
+
+      case 'adjust_preference':
+        // Explicitly update Elo ratings to boost or banish an artist
+        if (action.action === 'banish') {
+          // Banish artist from the current game pool or ratings
+          // We can dispatch an event or directly update DataStore
+          const { DataStore } = await import('../data/data-store.js');
+          const ratings = DataStore.getEloRatings();
+          const target = action.target.toLowerCase();
+          const key = Object.keys(ratings).find(k => ratings[k].name && ratings[k].name.toLowerCase().includes(target));
+          if (key) {
+             ratings[key].ignored = true; // Permanently banish
+             ratings[key].rating = Math.max(0, ratings[key].rating - 500); // Massive penalty
+             DataStore.setEloRatings(ratings);
+          }
+        } else if (action.action === 'boost') {
+          const { DataStore } = await import('../data/data-store.js');
+          const ratings = DataStore.getEloRatings();
+          const target = action.target.toLowerCase();
+          const key = Object.keys(ratings).find(k => ratings[k].name && ratings[k].name.toLowerCase().includes(target));
+          if (key) {
+             ratings[key].rating = Math.min(2000, ratings[key].rating + 200); // Big boost
+             DataStore.setEloRatings(ratings);
+          }
+        }
+        break;
+
       default:
         console.warn('Orchestrator: unknown Concierge action type', action.type);
     }

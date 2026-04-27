@@ -93,6 +93,34 @@ const TOOL_DECLARATIONS = [
       required: ['fact'],
     },
   },
+  {
+    name: 'create_playlist',
+    description: 'Create a brand new playlist based on a specific theme or mood requested by the user.',
+    parameters: {
+      type: 'object',
+      properties: {
+        theme: { type: 'string', description: 'The theme or mood of the playlist (e.g., "studying", "rainy day indie", "heavy workout")' },
+      },
+      required: ['theme'],
+    },
+  },
+  {
+    name: 'summarize_taste',
+    description: 'Provide a detailed, narrative summary of the user\'s current musical vibe and taste identity.',
+    parameters: { type: 'object', properties: {} },
+  },
+  {
+    name: 'adjust_preference',
+    description: 'Explicitly boost or penalize a specific artist based on user feedback, or store a permanent memory about their taste.',
+    parameters: {
+      type: 'object',
+      properties: {
+        target: { type: 'string', description: 'The artist name or genre being adjusted.' },
+        action: { type: 'string', description: '"boost", "banish", or "remember"' },
+      },
+      required: ['target', 'action'],
+    },
+  },
 ];
 
 // Keyword fallback for when Gemini is unavailable
@@ -233,6 +261,9 @@ If a function is not needed (e.g. general chat or explaining the app), reply con
       case 'suggest_artists':  return { type: 'suggest_artists', artists: args.artists };
       case 'regenerate':       return { type: 'regenerate' };
       case 'remember_fact':    return { type: 'remember_fact', fact: args.fact };
+      case 'create_playlist':  return { type: 'create_playlist', theme: args.theme };
+      case 'summarize_taste':  return { type: 'summarize_taste' };
+      case 'adjust_preference':return { type: 'adjust_preference', target: args.target, action: args.action };
       default:                 return { type: 'freeform_chat' };
     }
   }
@@ -253,6 +284,8 @@ If a function is not needed (e.g. general chat or explaining the app), reply con
       case 'explain_playlist': return `Let me explain your playlist...`;
       case 'suggest_artists':  return `Suggesting new artists for you to evaluate!`;
       case 'regenerate':       return `Regenerating your playlist from scratch!`;
+      case 'create_playlist':  return `Building your "${action.theme}" playlist right now!`;
+      case 'summarize_taste':  return `Let me analyze your musical vibe...`;
       default:                 return `On it!`;
     }
   }
@@ -267,6 +300,9 @@ If a function is not needed (e.g. general chat or explaining the app), reply con
       case 'explain_playlist': return `Here's a summary of your playlist...`;
       case 'regenerate':       return `Regenerating your playlist! ✨`;
       case 'remember_fact':    return `Noted! I'll remember that permanently. 🧠`;
+      case 'create_playlist':  return `On it! Compiling the perfect "${first.theme}" playlist for you now... 🎧`;
+      case 'summarize_taste':  return `Let me pull up your Sonic Dossier...`;
+      case 'adjust_preference':return `Done. I've noted your feedback on ${first.target}.`;
       default:                 return `Done!`;
     }
   }

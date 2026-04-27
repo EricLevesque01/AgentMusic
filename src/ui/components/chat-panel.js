@@ -217,7 +217,16 @@ export class ChatPanel {
     messagesEl.scrollTop = messagesEl.scrollHeight;
 
     try {
-      const context         = this.getContext ? this.getContext() : null;
+      let context = this.getContext ? this.getContext() : null;
+      if (!context || !context.tasteState) {
+        if (!this.profiler) {
+          const { ProfilerAgent } = await import('../../agents/profiler-agent.js');
+          this.profiler = new ProfilerAgent();
+        }
+        const tasteState = await this.profiler.buildTasteState();
+        context = { tasteState, sliders: {} };
+      }
+
       const { reply, actions } = await this.concierge.chat(text, context);
 
       // Remove typing indicator
@@ -237,25 +246,28 @@ export class ChatPanel {
 
       messagesEl.insertAdjacentHTML('beforeend', this._botBubble(displayReply));
 
-      // Dispatch actionable events (non-explain)
-      const actionableTypes = ['adjust_sliders', 'boost_genre', 'penalize_genre', 'regenerate'];
+      // Dispatch actionable events
+      const actionableTypes = ['adjust_sliders', 'boost_genre', 'penalize_genre', 'regenerate', 'create_playlist', 'adjust_preference'];
       for (const action of actions) {
         if (action.type === 'remember_fact') {
-          // Import data store dynamically if needed or rely on it being available globally, but we can just import it at top or use custom event
           window.dispatchEvent(new CustomEvent('tastegraph:remember-fact', { detail: action.fact }));
           messagesEl.insertAdjacentHTML('beforeend', this._botBubble(`🧠 Saved to your permanent Profile Preferences.`, true));
         } else if (action.type === 'suggest_artists') {
-          // Send to TasteGame pool
           window.dispatchEvent(new CustomEvent('tastegraph:inject-artists', { detail: action.artists }));
           messagesEl.insertAdjacentHTML('beforeend', this._botBubble(`🎸 I've injected **${action.artists.join(', ')}** into your comparison queue! Play the next round to evaluate my picks.`, true));
+        } else if (action.type === 'summarize_taste') {
+          messagesEl.insertAdjacentHTML('beforeend', this._botBubble(`*Generating Sonic Dossier...*`, true));
+          const { NarratorAgent } = await import('../../agents/narrator-agent.js');
+          const narrator = new NarratorAgent();
+          const profile = await narrator.generateAgenticProfile(context.tasteState);
+          messagesEl.insertAdjacentHTML('beforeend', this._botBubble(`**Your Musical Vibe:**<br><br>${profile}`));
         } else if (actionableTypes.includes(action.type) && this.orchestrator) {
           try {
             await this.orchestrator.handleConciergeAction(action);
-            // Notify the page to re-render playlist if it's showing one
             window.dispatchEvent(new CustomEvent('tastegraph:playlist-updated'));
-            messagesEl.insertAdjacentHTML('beforeend', this._botBubble('✅ Playlist updated!', true));
+            messagesEl.insertAdjacentHTML('beforeend', this._botBubble('✅ Action completed!', true));
           } catch (e) {
-            messagesEl.insertAdjacentHTML('beforeend', this._botBubble('⚠️ Couldn\'t update the playlist — try generating one first.', true));
+            messagesEl.insertAdjacentHTML('beforeend', this._botBubble('⚠️ Couldn\'t update — try generating a playlist first.', true));
           }
         }
       }

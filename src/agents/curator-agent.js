@@ -67,21 +67,31 @@ CULTURAL CONTEXT (from Wikipedia):
 ${wikiText || 'No deep context available — use MusicBrainz to research artists.'}
 
 YOUR RESEARCH STRATEGY (follow this step by step):
-1. Evaluate the intent. If the requested task/vibe does NOT match the user's known top artists (e.g. asking for Jazz when they only like Rock), immediately use search_spotify_artists (e.g. query: "genre:jazz") to find relevant starting points.
-2. Otherwise, START from 2-3 of the user's favorite artists as "seed" anchors.
-3. Use get_similar_artists on your seeds or search discoveries to find RELATED artists the user may not know.
-4. For promising discoveries, use search_musicbrainz to verify their background and genre tags fit the constraint.
-5. Use get_artist_top_tracks to find specific tracks, then add_track_to_playlist. Explain WHY each track belongs.
+0. You MUST start by calling the `think_and_plan` tool to analyze the user's INTENT against their TASTE PROFILE. Determine if their intent requires out-of-domain exploration.
+1. If the requested task/vibe (e.g., "Jazz", "Classical") does NOT match the user's known top artists, you are STRICTLY FORBIDDEN from starting with their top artists. You MUST use search_spotify_artists (e.g. query: "genre:jazz") to find completely new seed artists.
+2. If the task aligns with their taste, START from 2-3 of their favorite artists as "seed" anchors.
+3. Use get_similar_artists on your seeds to branch out.
+4. Verify promising discoveries using search_musicbrainz.
+5. Use get_artist_top_tracks to find specific tracks, then add_track_to_playlist. Explain WHY each track belongs in your reason.
 6. REPEAT: explore further out from your discoveries to find truly novel picks.
 
 CRITICAL RULES:
+- PEDANTIC COMPLIANCE: If the user asks for a specific genre, era, or vibe, you MUST ONLY add tracks that fit that constraint. Do NOT just give them their favorite artists if they don't fit the constraint.
 - You MUST use tools to discover and verify. Do not hallucinate track names.
 - At least 50% of the playlist should be from artists NOT in the user's S-tier or A-tier.
 - Maximum ${MAX_PER_ARTIST} tracks per artist.
-- After adding ${MAX_TRACKS} tracks, call finish_playlist.
-- Think out loud about why each artist and track fits the session vibe.`;
+- After adding ${MAX_TRACKS} tracks, call finish_playlist.`;
 
     const tools = [
+      {
+        name: 'think_and_plan',
+        description: 'Use this tool FIRST. Write out your step-by-step reasoning on how you will fulfill the user\'s specific session intent, and whether you need to break out of their known taste profile to do so.',
+        parameters: {
+          type: 'object',
+          properties: { rationale: { type: 'string', description: 'Your chain-of-thought reasoning.' } },
+          required: ['rationale']
+        }
+      },
       {
         name: 'search_musicbrainz',
         description: 'Research an artist: get their country of origin, active years, and genre tags. Use this to decide if an unfamiliar artist fits the session vibe.',
@@ -188,7 +198,10 @@ CRITICAL RULES:
           const args = call.args || {};
 
           try {
-            if (call.name === 'search_musicbrainz') {
+            if (call.name === 'think_and_plan') {
+              result = `Plan accepted: ${args.rationale}. Now execute the plan using search_spotify_artists, get_similar_artists, etc.`;
+            }
+            else if (call.name === 'search_musicbrainz') {
               const meta = await getArtistMetadata(args.artist_name);
               result = meta 
                 ? `Artist: ${args.artist_name}. Country: ${meta.country || 'Unknown'}. Active since: ${meta.beginYear || 'Unknown'}. Genre tags: ${(meta.tags||[]).join(', ') || 'None found'}. ${meta.disambiguation || ''}` 

@@ -228,6 +228,7 @@ export async function searchArtists(query, limit = 5) {
   }
 }
 
+
 /**
  * Search Spotify for a track by name and artist.
  * Returns the best matching track object, or null if not found.

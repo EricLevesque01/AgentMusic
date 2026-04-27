@@ -48,7 +48,7 @@ export class ScoutAgent {
         }
         else if (call.tool === 'getRecommendations' && call.args.seed_genres) {
           const genres = Array.isArray(call.args.seed_genres) ? call.args.seed_genres : [call.args.seed_genres];
-          const options = { seedGenres: genres.slice(0,3), limit: 15 };
+          const options = { seedGenres: genres.slice(0,3).map(g => g.toLowerCase()), limit: 15 };
           
           if (call.args.target_features && typeof call.args.target_features === 'object') {
             Object.assign(options, call.args.target_features);

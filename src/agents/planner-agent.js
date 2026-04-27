@@ -56,8 +56,14 @@ RULES:
       const { textReply } = await callWithTools(prompt, [{ role: 'user', parts: [{ text: 'Create JSON research plan.' }] }], [], 'fast');
       
       let rawText = textReply.trim();
-      if (rawText.startsWith('\`\`\`json')) rawText = rawText.replace(/\`\`\`json/g, '').replace(/\`\`\`/g, '').trim();
-      if (rawText.startsWith('\`\`\`')) rawText = rawText.replace(/\`\`\`/g, '').trim();
+      const start = rawText.indexOf('{');
+      const end = rawText.lastIndexOf('}');
+      if (start !== -1 && end !== -1 && end > start) {
+        rawText = rawText.substring(start, end + 1);
+      } else {
+        if (rawText.startsWith('```json')) rawText = rawText.replace(/```json/g, '').replace(/```/g, '').trim();
+        if (rawText.startsWith('```')) rawText = rawText.replace(/```/g, '').trim();
+      }
       
       const plan = JSON.parse(rawText);
       if (onThought) onThought(`> Strategy: ${plan.strategy}`);

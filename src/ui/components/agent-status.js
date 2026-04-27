@@ -15,11 +15,18 @@ export class AgentStatus {
     this.container = container;
     this.currentStage = null;
     this.isDone = false;
+    this.thoughts = [];
   }
 
   update(stageId, isDone = false) {
     this.currentStage = stageId;
     this.isDone = isDone;
+    this.render();
+  }
+
+  addThought(thought) {
+    this.thoughts.push(thought);
+    if (this.thoughts.length > 5) this.thoughts.shift(); // keep last 5
     this.render();
   }
 
@@ -54,11 +61,18 @@ export class AgentStatus {
       `;
     }).join('');
 
+    const thoughtsHtml = this.thoughts.length > 0 ? `
+      <div style="margin-top: var(--space-4); background: #000; color: #0f0; font-family: monospace; padding: var(--space-3); border-radius: var(--radius-sm); font-size: 11px; line-height: 1.4; text-align: left;">
+        ${this.thoughts.map(t => `> ${t}`).join('<br>')}
+      </div>
+    ` : '';
+
     this.container.innerHTML = `
       <div class="pipeline-status" style="margin-bottom: var(--space-4);">
         <div style="display: flex; align-items: center; width: 100%; position: relative; padding: 0 var(--space-2);">
           ${pipelineHtml}
         </div>
+        ${thoughtsHtml}
       </div>
     `;
   }

@@ -73,8 +73,9 @@ MusicBrainz Structural Data (for deep context):
 ${mbDataStr.join('\n') || 'None available.'}
 
 Analyze the tracks and the MusicBrainz data. Call the 'submit_explanations' tool with:
-1. A concise 1-sentence 'playlistSummary' describing the overall vibe and origins of the music.
-2. An array of 'trackExplanations', where each object has the trackId and a 1-sentence explanation of why it fits. If a track's source is a 'trending_signal' (like Reddit), YOU MUST explicitly mention that it is currently trending in cultural spaces alongside fitting their taste.`;
+1. A creative, catchy 2-5 word 'playlistTitle'.
+2. A concise 1-sentence 'playlistSummary' describing the overall vibe and origins of the music.
+3. An array of 'trackExplanations', where each object has the trackId and a 1-sentence explanation of why it fits. If a track's source is a 'trending_signal' (like Reddit), YOU MUST explicitly mention that it is currently trending in cultural spaces alongside fitting their taste.`;
 
     const toolDeclarations = [{
       name: 'submit_explanations',
@@ -82,6 +83,7 @@ Analyze the tracks and the MusicBrainz data. Call the 'submit_explanations' tool
       parameters: {
         type: 'object',
         properties: {
+          playlistTitle: { type: 'string' },
           playlistSummary: { type: 'string' },
           trackExplanations: {
             type: 'array',
@@ -95,7 +97,7 @@ Analyze the tracks and the MusicBrainz data. Call the 'submit_explanations' tool
             }
           }
         },
-        required: ['playlistSummary', 'trackExplanations']
+        required: ['playlistTitle', 'playlistSummary', 'trackExplanations']
       }
     }];
 
@@ -109,6 +111,7 @@ Analyze the tracks and the MusicBrainz data. Call the 'submit_explanations' tool
           trackMap.set(item.trackId, item.explanation);
         }
         return {
+          playlistTitle: submitCall.args.playlistTitle || 'Curated Playlist',
           playlistSummary: submitCall.args.playlistSummary || 'A custom mix based on your taste graph.',
           trackExplanations: trackMap
         };
@@ -123,6 +126,7 @@ Analyze the tracks and the MusicBrainz data. Call the 'submit_explanations' tool
       fallbackMap.set(c.track.id, `Selected due to its strong ${c.dominantFactor} affinity with your profile.`);
     }
     return {
+      playlistTitle: 'Curated Mix',
       playlistSummary: `A custom mix of ${scoredPlaylist.length} tracks based on your taste graph.`,
       trackExplanations: fallbackMap,
     };

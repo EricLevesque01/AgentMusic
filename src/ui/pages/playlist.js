@@ -42,10 +42,13 @@ export function renderPlaylistPage(container) {
 
   const orchestrator = window.TG?.orchestrator || new Orchestrator((stage, isDone) => {
     statusPanel.update(stage, isDone);
+  }, (thought) => {
+    statusPanel.addThought(thought);
   });
 
   if (window.TG?.orchestrator) {
     window.TG.orchestrator.statusCallback = (stage, isDone) => statusPanel.update(stage, isDone);
+    window.TG.orchestrator.thoughtCallback = (thought) => statusPanel.addThought(thought);
   }
 
   const resultsEl    = document.getElementById('playlist-results');
@@ -69,15 +72,16 @@ export function renderPlaylistPage(container) {
     }
 
     listEl.innerHTML = playlists.map(p => {
-      const summary = p.context?.explanations?.playlistSummary || p.context?.playlistSummary || '';
-      const title = summary ? summary.split('.')[0] : (p.context?.sessionIntent?.slice(0, 60) || 'Curated Playlist');
+      const title = p.context?.explanations?.playlistTitle || p.context?.playlistTitle || (p.context?.sessionIntent?.slice(0, 60) || 'Curated Playlist');
+      const desc = p.context?.explanations?.playlistSummary || p.context?.playlistSummary || '';
       const trackCount = p.context?.scoredPlaylist?.length || 0;
       const date = new Date(p.createdAt).toLocaleDateString();
       return `
         <div class="glass-card" style="padding:var(--space-4); display:flex; justify-content:space-between; align-items:center;">
-          <div style="flex:1;">
+          <div style="flex:1; padding-right:var(--space-4);">
             <h4 style="margin:0; font-size:var(--font-size-md); font-weight:var(--font-weight-bold);">${title}</h4>
-            <div style="font-size:var(--font-size-xs); color:var(--text-muted); margin-top:4px;">
+            ${desc ? `<div style="font-size:var(--font-size-sm); color:var(--text-secondary); margin-top:6px; line-height:1.4;">${desc}</div>` : ''}
+            <div style="font-size:var(--font-size-xs); color:var(--text-muted); margin-top:8px;">
               ${trackCount} tracks • Generated ${date}
             </div>
           </div>

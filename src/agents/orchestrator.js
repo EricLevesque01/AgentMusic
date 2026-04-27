@@ -10,8 +10,9 @@ import { CuratorAgent } from './curator-agent.js';
 import { NarratorAgent } from './narrator-agent.js';
 
 export class Orchestrator {
-  constructor(statusCallback = null) {
+  constructor(statusCallback = null, thoughtCallback = null) {
     this.statusCallback = statusCallback;
+    this.thoughtCallback = thoughtCallback; // New callback for granular thoughts
     this.profiler  = new ProfilerAgent();
     this.scout     = new ScoutAgent();
     this.curator   = new CuratorAgent();
@@ -21,6 +22,10 @@ export class Orchestrator {
 
   _reportStatus(stageId, isDone = false) {
     if (this.statusCallback) this.statusCallback(stageId, isDone);
+  }
+
+  _reportThought(thought) {
+    if (this.thoughtCallback) this.thoughtCallback(thought);
   }
 
   /**
@@ -55,7 +60,8 @@ export class Orchestrator {
       context.candidatePool,
       context.sessionIntent,
       context.sessionAdjustments,
-      context
+      context,
+      this._reportThought.bind(this)
     );
 
     // --- Stage 4: Narrator — reads context for personalized copy ---
@@ -89,7 +95,9 @@ export class Orchestrator {
       this._lastContext.tasteState,
       this._lastContext.candidatePool,
       this._lastContext.sessionIntent,
-      this._lastContext.sessionAdjustments
+      this._lastContext.sessionAdjustments,
+      this._lastContext,
+      this._reportThought.bind(this)
     );
 
     this._reportStatus('narrator');

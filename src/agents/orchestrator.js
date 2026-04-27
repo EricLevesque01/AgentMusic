@@ -5,6 +5,7 @@
  */
 import { PipelineContext } from './pipeline-context.js';
 import { ProfilerAgent } from './profiler-agent.js';
+import { PlannerAgent } from './planner-agent.js';
 import { ScoutAgent } from './scout-agent.js';
 import { CuratorAgent } from './curator-agent.js';
 import { NarratorAgent } from './narrator-agent.js';
@@ -14,6 +15,7 @@ export class Orchestrator {
     this.statusCallback = statusCallback;
     this.thoughtCallback = thoughtCallback; // New callback for granular thoughts
     this.profiler  = new ProfilerAgent();
+    this.planner   = new PlannerAgent();
     this.scout     = new ScoutAgent();
     this.curator   = new CuratorAgent();
     this.narrator  = new NarratorAgent();
@@ -45,11 +47,20 @@ export class Orchestrator {
     // Populate inter-agent tasteProfile from profiler output
     this._populateTasteProfile(context);
 
-    // --- Stage 2: Scout — reads coverageGaps + sessionSignals ---
+    // --- Stage 1.5: Planner (ReWOO Strategy Generation) ---
+    this._reportStatus('planner');
+    const plan = await this.planner.createResearchPlan(
+      context.tasteState, 
+      context.sessionIntent, 
+      this._reportThought.bind(this)
+    );
+    context.researchPlan = plan;
+
+    // --- Stage 2: Scout (Parallel Worker Execution) ---
     this._reportStatus('scout');
     context.validateForStage('scout');
-    context.candidatePool = await this.scout.findCandidates(
-      context.tasteState, context.sessionIntent, context
+    context.candidatePool = await this.scout.executePlan(
+      plan, context.tasteState, context
     );
 
     // --- Stage 3: Curator — reads full context for LLM prompt enrichment ---

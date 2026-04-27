@@ -46,6 +46,14 @@ function navigate() {
   document.getElementById('inspector-panel')?.classList.remove('hidden');
 
   const route = getCurrentRoute();
+  
+  // Hide nav and FAB on home page for a clean landing experience
+  if (route === '#/') {
+    document.body.classList.add('nav-hidden');
+  } else {
+    document.body.classList.remove('nav-hidden');
+  }
+
   const renderFn = routes[route];
   if (pageContainer && renderFn) {
     renderFn(pageContainer);

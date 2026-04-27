@@ -28,7 +28,11 @@ export class ChatPanel {
     this.fabBtn = document.createElement('button');
     this.fabBtn.id = 'chat-fab';
     this.fabBtn.setAttribute('aria-label', 'Open Agent Chat');
-    this.fabBtn.innerHTML = '🤖';
+    this.fabBtn.innerHTML = `
+      <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path>
+      </svg>
+    `;
     this.fabBtn.style.cssText = `
       position: fixed;
       bottom: 88px;
@@ -96,7 +100,11 @@ export class ChatPanel {
       this.panel.style.opacity     = '0';
       this.panel.style.transform   = 'translateY(20px) scale(0.95)';
       this.panel.style.pointerEvents = 'none';
-      this.fabBtn.innerHTML = '🤖';
+      this.fabBtn.innerHTML = `
+        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path>
+        </svg>
+      `;
     }
   }
 
@@ -104,7 +112,11 @@ export class ChatPanel {
     return `
       <!-- Header -->
       <div style="padding: var(--space-4); border-bottom: 1px solid var(--border-subtle); display: flex; align-items: center; gap: var(--space-3);">
-        <div style="width: 36px; height: 36px; border-radius: 50%; background: var(--gradient-primary); display: flex; align-items: center; justify-content: center; font-size: 1.1rem; flex-shrink: 0;">🤖</div>
+        <div style="width: 36px; height: 36px; border-radius: 50%; background: var(--gradient-primary); display: flex; align-items: center; justify-content: center; font-size: 1.1rem; flex-shrink: 0;">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path>
+          </svg>
+        </div>
         <div>
           <div style="font-weight: var(--font-weight-semibold); font-size: var(--font-size-sm);">Agent Music</div>
           <div style="font-size: 11px; color: var(--text-muted);">Powered by Gemini 2.0 Flash</div>
@@ -258,7 +270,11 @@ export class ChatPanel {
   _botBubble(text, small = false) {
     return `
       <div style="display:flex;gap:var(--space-2);align-items:flex-start;">
-        <div style="width:28px;height:28px;border-radius:50%;background:var(--gradient-primary);display:flex;align-items:center;justify-content:center;font-size:0.8rem;flex-shrink:0;">🤖</div>
+        <div style="width:28px;height:28px;border-radius:50%;background:var(--gradient-primary);display:flex;align-items:center;justify-content:center;font-size:0.8rem;flex-shrink:0;">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path>
+          </svg>
+        </div>
         <div style="background:var(--bg-card);border:1px solid var(--border-subtle);padding:8px 14px;border-radius:4px 16px 16px 16px;max-width:82%;font-size:${small ? '12px' : 'var(--font-size-sm)'};color:var(--text-${small ? 'muted' : 'primary'});line-height:1.5;">${text}</div>
       </div>
     `;

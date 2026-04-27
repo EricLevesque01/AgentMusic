@@ -166,6 +166,19 @@ body {
   overflow-y: auto;
 }
 
+body.nav-hidden #sidebar {
+  display: none !important;
+}
+body.nav-hidden #page-container {
+  margin-left: 0;
+}
+body.nav-hidden #bottom-nav {
+  display: none !important;
+}
+body.nav-hidden #chat-fab {
+  display: none !important;
+}
+
 /* Right Inspector Panel */
 #inspector-panel {
   width: var(--inspector-width);

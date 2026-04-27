@@ -69,7 +69,8 @@ export function renderPlaylistPage(container) {
     }
 
     listEl.innerHTML = playlists.map(p => {
-      const title = p.context?.playlistSummary?.split('.')[0] || "Curated Playlist";
+      const summary = p.context?.explanations?.playlistSummary || p.context?.playlistSummary || '';
+      const title = summary ? summary.split('.')[0] : (p.context?.sessionIntent?.slice(0, 60) || 'Curated Playlist');
       const trackCount = p.context?.scoredPlaylist?.length || 0;
       const date = new Date(p.createdAt).toLocaleDateString();
       return `

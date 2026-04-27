@@ -41,50 +41,50 @@ export class CuratorAgent {
     const underExplored = context?.tasteProfile?.underExploredGenres || [];
     const skippedGenres = context?.sessionSignals?.skippedGenres || [];
     
-    let systemPrompt = `You are an expert Music Curator Agent for TasteGraph.
-Your goal is to curate a highly cohesive, strategic ${MAX_TRACKS}-track playlist.
+    let systemPrompt = `You are a Music Curator Agent that DISCOVERS new music by exploring the music graph.
 
-USER TASTE PROFILE (Calibrated via Active Learning):
-- Core Identity (S-Tier): ${(tasteState.tasteTiers?.coreIdentity || []).join(', ') || 'None'}
-- Active Obsessions (A-Tier): ${(tasteState.tasteTiers?.activeObsessions || []).join(', ') || 'None'}
-- Actively Disliked: ${(tasteState.tasteTiers?.activelyDismissed || []).join(', ') || 'None'}
-- Top Genres: ${topGenres}
-${anchoredArtist ? `- North Star Artist (Settled #1): ${anchoredArtist} — this is the user's confirmed absolute favorite. Use their emotional register and sonic texture as a guiding reference.` : ''}
+YOUR MISSION: Build a ${MAX_TRACKS}-track playlist by RESEARCHING outward from the user's taste anchors. Do NOT just list tracks you already know — use your tools to explore connections, find artists the user hasn't heard of, and verify every track exists on Spotify before adding it.
 
-EXPLICIT PREFERENCES (Permanent Rules):
+USER TASTE PROFILE (calibrated via head-to-head comparisons):
+- Favorite Artists (S-Tier): ${(tasteState.tasteTiers?.coreIdentity || []).join(', ') || 'Not calibrated yet'}
+- Artists They're Into (A-Tier): ${(tasteState.tasteTiers?.activeObsessions || []).join(', ') || 'Not calibrated yet'}
+- Artists They Dislike: ${(tasteState.tasteTiers?.activelyDismissed || []).join(', ') || 'None'}
+- Top Genres: ${topGenres || 'Various'}
+${anchoredArtist ? `- #1 Artist: ${anchoredArtist} — their confirmed absolute favorite.` : ''}
+
+EXPLICIT RULES:
 - Banned Artists: ${(tasteState.explicitPreferences?.banned_artists || []).join(', ') || 'None'}
 - Banned Tracks: ${(tasteState.explicitPreferences?.banned_tracks || []).join(', ') || 'None'}
 - Preferred Decades: ${(tasteState.explicitPreferences?.preferred_decades || []).join(', ') || 'Any'}
-- Concierge Memories (Facts to obey): ${(tasteState.explicitPreferences?.agent_memories || []).join(', ') || 'None'}
+- Concierge Memories: ${(tasteState.explicitPreferences?.agent_memories || []).join('; ') || 'None'}
 
-CURRENT SESSION INTENT:
-"${sessionIntent}"
+SESSION INTENT: "${sessionIntent || 'General playlist based on my taste'}"
 
-${skippedGenres.length > 0 ? `- SESSION FEEDBACK: The user skipped multiple ${skippedGenres.join(', ')} tracks this session. Deprioritize these genres.` : ''}
-${underExplored.length > 0 ? `- TASTE GAPS TO FILL: The user hasn't rated much in these genres: ${underExplored.join(', ')}. Try to include 1-2 tracks from these areas if quality candidates exist.` : ''}
+${skippedGenres.length > 0 ? `SESSION FEEDBACK: User skipped ${skippedGenres.join(', ')} tracks recently. Deprioritize.` : ''}
+${underExplored.length > 0 ? `TASTE GAPS: Under-explored genres to consider: ${underExplored.join(', ')}.` : ''}
 
-CULTURAL CONTEXT (Wikipedia RAG):
-${wikiText || 'No deep biographical context available.'}
+CULTURAL CONTEXT (from Wikipedia):
+${wikiText || 'No deep context available — use MusicBrainz to research artists.'}
 
-Instead of picking from a massive database, you must actively research and curate tracks using your tools.
-You can:
-1. Search MusicBrainz for artist background and deep tags.
-2. Find similar artists on Last.fm.
-3. Search Spotify to find specific tracks.
-4. Add a track to the playlist when you are confident it fits perfectly.
+YOUR RESEARCH STRATEGY (follow this step by step):
+1. START from 2-3 of the user's favorite artists as "seed" anchors.
+2. Use get_similar_artists on each seed to discover RELATED artists the user may not know.
+3. For promising discoveries, use search_musicbrainz to understand their background, era, and genre tags — decide if they fit the session intent.
+4. Use search_spotify_track to find specific tracks from artists that pass your quality check.
+5. Add tracks that genuinely fit the vibe. Explain WHY each track belongs.
+6. REPEAT: use get_similar_artists on your DISCOVERIES to explore further out from the user's core taste. This is how you find truly novel picks.
 
 CRITICAL RULES:
-- Only use REAL artists and tracks. Use the tools to verify they exist before adding.
-- You must add exactly ${MAX_TRACKS} tracks.
-- MAXIMUM ${MAX_PER_ARTIST} tracks per artist to ensure variety. Spread across many artists.
-- After adding ${MAX_TRACKS} tracks, call the 'finish_playlist' tool.
-- Think step-by-step. Research an artist, find similar artists, verify tracks, then add them.
-- Work in batches: research 3-4 artists, add their best tracks, then move to the next batch.`;
+- You MUST use tools to discover and verify. Do not hallucinate track names.
+- At least 50% of the playlist should be from artists NOT in the user's S-tier or A-tier.
+- Maximum ${MAX_PER_ARTIST} tracks per artist.
+- After adding ${MAX_TRACKS} tracks, call finish_playlist.
+- Think out loud about why each artist and track fits the session vibe.`;
 
     const tools = [
       {
         name: 'search_musicbrainz',
-        description: 'Get deep background info and tags for an artist to see if they fit the vibe.',
+        description: 'Research an artist: get their country of origin, active years, and genre tags. Use this to decide if an unfamiliar artist fits the session vibe.',
         parameters: {
           type: 'object',
           properties: { artist_name: { type: 'string' } },
@@ -93,7 +93,16 @@ CRITICAL RULES:
       },
       {
         name: 'get_similar_artists',
-        description: 'Find artists similar to a given seed artist using Last.fm data.',
+        description: 'Explore outward: find 5 artists similar to a given seed. This is your PRIMARY discovery tool — use it to find artists the user hasn\'t heard of yet.',
+        parameters: {
+          type: 'object',
+          properties: { artist_name: { type: 'string' } },
+          required: ['artist_name']
+        }
+      },
+      {
+        name: 'get_artist_top_tracks',
+        description: 'Get the top tracks for an artist on Spotify. Use this AFTER discovering an artist to see what tracks they have available.',
         parameters: {
           type: 'object',
           properties: { artist_name: { type: 'string' } },
@@ -102,7 +111,7 @@ CRITICAL RULES:
       },
       {
         name: 'search_spotify_track',
-        description: 'Search Spotify to find a playable track ID and metadata.',
+        description: 'Search Spotify for a specific track by name and artist. Returns the track ID needed for add_track_to_playlist. Use this to verify a track exists.',
         parameters: {
           type: 'object',
           properties: { track_name: { type: 'string' }, artist_name: { type: 'string' } },
@@ -111,14 +120,14 @@ CRITICAL RULES:
       },
       {
         name: 'add_track_to_playlist',
-        description: 'Add a verified track to the final playlist.',
+        description: 'Add a verified track to the final playlist. You MUST have a valid track_id from search_spotify_track or get_artist_top_tracks first.',
         parameters: {
           type: 'object',
           properties: {
-            track_id: { type: 'string', description: 'The Spotify Track ID' },
+            track_id: { type: 'string', description: 'The Spotify Track ID (from a previous tool call)' },
             track_name: { type: 'string' },
             artist_name: { type: 'string' },
-            reason: { type: 'string', description: 'Why you chose this track' }
+            reason: { type: 'string', description: 'Why this track fits the playlist — reference the session intent and how you discovered this artist' }
           },
           required: ['track_id', 'track_name', 'artist_name', 'reason']
         }
@@ -172,19 +181,45 @@ CRITICAL RULES:
           try {
             if (call.name === 'search_musicbrainz') {
               const meta = await getArtistMetadata(args.artist_name);
-              result = meta ? `Found: ${meta.country}, Era: ${meta.beginYear}. Tags: ${(meta.tags||[]).join(', ')}` : "Artist not found on MusicBrainz.";
+              result = meta 
+                ? `Artist: ${args.artist_name}. Country: ${meta.country || 'Unknown'}. Active since: ${meta.beginYear || 'Unknown'}. Genre tags: ${(meta.tags||[]).join(', ') || 'None found'}. ${meta.disambiguation || ''}` 
+                : `"${args.artist_name}" not found on MusicBrainz. Try a different spelling or artist.`;
             } 
             else if (call.name === 'get_similar_artists') {
-              const similar = await getSimilarArtists(args.artist_name, 5);
-              result = similar.length > 0 ? similar.map(a => a.name).join(', ') : "No similar artists found.";
+              const similar = await getSimilarArtists(args.artist_name, 8);
+              if (similar.length > 0) {
+                result = `Artists similar to ${args.artist_name}:\n` + similar.map((a, i) => 
+                  `${i+1}. ${a.name} (match: ${a.match ? (a.match * 100).toFixed(0) + '%' : 'unknown'})`
+                ).join('\n') + '\n\nUse get_artist_top_tracks or search_musicbrainz on any of these to explore further.';
+              } else {
+                result = `No similar artists found for "${args.artist_name}". Try a different seed.`;
+              }
             } 
+            else if (call.name === 'get_artist_top_tracks') {
+              // First, search for the artist to get their Spotify ID
+              const { searchArtist } = await import('../data/spotify-api.js');
+              const artist = await searchArtist(args.artist_name);
+              if (artist && artist.id) {
+                const tracks = await getArtistTopTracks(artist.id);
+                if (tracks && tracks.length > 0) {
+                  tracks.forEach(t => { trackCache[t.id] = t; });
+                  result = `Top tracks for ${artist.name} (${artist.genres?.slice(0,3).join(', ') || 'no genre tags'}):\n` + tracks.slice(0, 8).map((t, i) => 
+                    `${i+1}. "${t.name}" (ID: ${t.id}) — Album: ${t.album?.name || 'Unknown'}`
+                  ).join('\n') + '\n\nUse add_track_to_playlist with any of these track IDs.';
+                } else {
+                  result = `Found ${artist.name} on Spotify but they have no top tracks available.`;
+                }
+              } else {
+                result = `"${args.artist_name}" not found on Spotify. They may not be on the platform — try a different artist.`;
+              }
+            }
             else if (call.name === 'search_spotify_track') {
               const track = await searchTrack(args.track_name, args.artist_name);
               if (track) {
                 trackCache[track.id] = track;
-                result = `SUCCESS: Track ID is ${track.id}. Artist ID is ${track.artists[0]?.id}.`;
+                result = `Found: "${track.name}" by ${track.artists?.map(a=>a.name).join(', ')} (ID: ${track.id}). Album: ${track.album?.name || 'Unknown'}.`;
               } else {
-                result = "Track not found on Spotify. Try another.";
+                result = `"${args.track_name}" by ${args.artist_name} not found on Spotify. Try get_artist_top_tracks to see what's available.`;
               }
             } 
             else if (call.name === 'add_track_to_playlist') {

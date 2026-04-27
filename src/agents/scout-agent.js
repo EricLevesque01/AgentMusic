@@ -12,7 +12,7 @@
  *   Adventurous/discover → Hop-0 + Hop-1 + Hop-2 (deep exploration)
  */
 import { getSimilarArtists, getArtistTags } from '../data/lastfm-api.js';
-import { getArtistTopTracks, getRecommendations, searchTrack, searchTracks } from '../data/spotify-api.js';
+import { getArtistTopTracks, getRecommendations, searchTrack, searchTracks, searchArtist } from '../data/spotify-api.js';
 import { callWithTools } from '../data/gemini-api.js';
 import { DataStore } from '../data/data-store.js';
 
@@ -113,16 +113,18 @@ export class ScoutAgent {
     const prompt = `You are a music discovery agent. The user's current session intent is: "${sessionIntent}". 
 Their top genres are: ${topGenres.join(', ')}. 
 Analyze the intent. You MUST call the 'submit_search_queries' tool.
-If the intent asks for specific genres, vibes, or artists (e.g. "MJ Lenderman", "Jazz", "Alt-country"), provide up to 3 Spotify search queries (e.g. "genre:jazz", "artist:mj lenderman").
-If the intent is generic (e.g., "play my favorites"), call the tool with an empty array for queries.`;
+If the intent asks for specific genres, vibes, or artists (e.g. "MJ Lenderman", "Jazz", "Alt-country"), provide up to 3 Spotify search queries (e.g. "genre:jazz").
+Additionally, if they mention specific artists to anchor on, provide them in the 'seed_artists' array so we can fetch adjacent recommendations and Last.fm similar artists.
+If the intent is generic (e.g., "play my favorites"), call the tool with empty arrays.`;
 
     const toolDecls = [{
       name: 'submit_search_queries',
-      description: 'Submit search queries to pull targeted tracks.',
+      description: 'Submit search queries and seed artists to pull targeted tracks.',
       parameters: {
         type: 'object',
         properties: {
-          queries: { type: 'array', items: { type: 'string' } }
+          queries: { type: 'array', items: { type: 'string' }, description: 'Spotify search queries' },
+          seed_artists: { type: 'array', items: { type: 'string' }, description: 'Names of specific artists mentioned' }
         },
         required: ['queries']
       }
@@ -131,27 +133,65 @@ If the intent is generic (e.g., "play my favorites"), call the tool with an empt
     try {
       const result = await callWithTools(prompt, [{ role: 'user', parts: [{ text: 'Extract search queries if needed.' }] }], toolDecls);
       const submitCall = result.functionCalls.find(fc => fc.name === 'submit_search_queries');
-      if (submitCall && submitCall.args && submitCall.args.queries) {
-        console.log("Scout Intent Override: Extracted queries:", submitCall.args.queries);
-        for (const query of submitCall.args.queries) {
-          try {
-            const tracks = await searchTracks(query, 5);
-            for (const track of tracks) {
-              if (!seen.has(track.id)) {
-                seen.add(track.id);
-                pool.push({
-                  track,
-                  artistName: track.artists?.[0]?.name || '',
-                  artistId: track.artists?.[0]?.id || '',
-                  source: 'intent_override',
-                  hopDistance: 0,
-                  eloScore: 2000, // Artificially high to prioritize these candidates
-                  tags: [],
-                });
+      if (submitCall && submitCall.args) {
+        console.log("Scout Intent Override: Extracted args:", submitCall.args);
+        
+        // 1. Process explicit queries
+        if (submitCall.args.queries) {
+          for (const query of submitCall.args.queries) {
+            try {
+              const tracks = await searchTracks(query, 5);
+              for (const track of tracks) {
+                if (!seen.has(track.id)) {
+                  seen.add(track.id);
+                  pool.push({
+                    track, artistName: track.artists?.[0]?.name || '', artistId: track.artists?.[0]?.id || '',
+                    source: 'intent_override', hopDistance: 0, eloScore: 2000, tags: []
+                  });
+                }
               }
+            } catch (err) {
+              console.warn(`Scout: Intent search failed for query ${query}`, err.message);
             }
-          } catch (err) {
-            console.warn(`Scout: Intent search failed for query ${query}`, err.message);
+          }
+        }
+
+        // 2. Process Seed Artists for Adjacent/Similar Discovery
+        if (submitCall.args.seed_artists) {
+          for (const artistName of submitCall.args.seed_artists) {
+            try {
+              const artist = await searchArtist(artistName);
+              if (artist) {
+                // A) Algorithmic Spotify Recs
+                const recs = await getRecommendations({ seedArtists: [artist.id], limit: 5 });
+                for (const track of recs) {
+                  if (!seen.has(track.id)) {
+                    seen.add(track.id);
+                    pool.push({
+                      track, artistName: track.artists?.[0]?.name || '', artistId: track.artists?.[0]?.id || '',
+                      source: 'intent_override', hopDistance: 1, eloScore: 1900, tags: []
+                    });
+                  }
+                }
+                
+                // B) Last.fm Similar Artists ("What other people online listen to")
+                const similar = await getSimilarArtists(artistName, 2);
+                for (const sim of similar) {
+                  const topTracks = await getArtistTopTracks(sim.id || artist.id); // fallback if ID fails
+                  for (const track of topTracks.slice(0, 2)) {
+                    if (!seen.has(track.id)) {
+                      seen.add(track.id);
+                      pool.push({
+                        track, artistName: track.artists?.[0]?.name || '', artistId: track.artists?.[0]?.id || '',
+                        source: 'intent_override', hopDistance: 1, eloScore: 1850, tags: []
+                      });
+                    }
+                  }
+                }
+              }
+            } catch (err) {
+              console.warn(`Scout: Adjacent intent search failed for ${artistName}`, err.message);
+            }
           }
         }
       }

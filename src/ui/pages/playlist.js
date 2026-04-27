@@ -66,8 +66,8 @@ export function renderPlaylistPage(container) {
        const mockCtx = {
           playlistSummary: "A curated mix of deep atmospheric tracks to help you focus, built around dark synth and ambient textures.",
           scoredPlaylist: Array.from({ length: 15 }, (_, i) => ({
-            id: \`mock-\${i}\`,
-            name: \`Curated Track \${i + 1}\`,
+            id: `mock-${i}`,
+            name: `Curated Track ${i + 1}`,
             artistName: 'Various Artists',
             imageUrl: '',
             albumName: 'Mock Album',
@@ -160,8 +160,8 @@ export function renderPlaylistPage(container) {
           const { getCurrentUser, createPlaylist, addTracksToPlaylist } = await import('../../data/spotify-api.js');
           
           const user = await getCurrentUser();
-          const uris = p.context.scoredPlaylist.map(c => \`spotify:track:\${c.track.id}\`);
-          const pl = await createPlaylist(user.id, \`TasteGraph: \${new Date().toLocaleDateString()}\`, p.context.playlistSummary || 'TasteGraph Curated Mix');
+          const uris = p.context.scoredPlaylist.map(c => `spotify:track:${c.track.id}`);
+          const pl = await createPlaylist(user.id, `TasteGraph: ${new Date().toLocaleDateString()}`, p.context.playlistSummary || 'TasteGraph Curated Mix');
           await addTracksToPlaylist(pl.id, uris);
           
           e.currentTarget.innerHTML = '✅ Saved!';
@@ -233,4 +233,5 @@ export function renderPlaylistPage(container) {
     }
   });
 }
+
 

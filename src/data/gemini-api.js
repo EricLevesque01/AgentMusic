@@ -5,8 +5,8 @@
  */
 const GEMINI_API_KEY = import.meta.env?.VITE_GEMINI_API_KEY;
 const MODELS = {
-  fast: 'gemini-2.0-flash',
-  reasoning: 'gemini-2.0-flash'
+  fast: 'gemini-2.0-flash',       // Chat, intent parsing, session summaries
+  reasoning: 'gemini-2.5-flash'   // Curator ReAct loop, profile analysis
 };
 
 /**

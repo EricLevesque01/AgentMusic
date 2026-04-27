@@ -2,7 +2,7 @@
  * TasteGraph — Last.fm API Wrapper
  * Used by the Scout Agent for similar artists and genre tags.
  *
- * API Key from EchoDJ project: a115deb44dbd0710d1e9f81f0b563e76
+ * API Key loaded from .env (VITE_LASTFM_API_KEY)
  * Docs: https://www.last.fm/api
  */
 

@@ -45,7 +45,8 @@ const COLD_START_ANCHORS = [
 ];
 
 // Hybrid playback logic attached globally for onclick handlers
-window.playTrackHybrid = async (uri, previewUrl, artistId) => {
+if (typeof window !== 'undefined') {
+  window.playTrackHybrid = async (uri, previewUrl, artistId) => {
   const btn = document.getElementById(`play-btn-${artistId}`);
   if (!btn) return;
   const isPlaying = btn.dataset.playing === 'true';
@@ -94,7 +95,8 @@ window.playTrackHybrid = async (uri, previewUrl, artistId) => {
       }
     }
   }
-};
+  };
+}
 
 export class TasteGame {
   constructor(container) {
@@ -442,9 +444,9 @@ export class TasteGame {
     
     if (candidates.length === 0) return knownRanked[Math.floor(Math.random() * knownRanked.length)];
     
-    // Sort by absolute distance and take the top 15 closest
+    // Sort by absolute distance and take the top 3 closest
     candidates.sort((a, b) => a.diff - b.diff);
-    const poolSize = Math.min(15, candidates.length);
+    const poolSize = Math.min(3, candidates.length);
     const topCandidates = candidates.slice(0, poolSize);
     
     // Pick one randomly from the pool to keep the game fresh!

@@ -2,11 +2,7 @@
  * TasteGraph — Gemini API Wrapper
  * Powers the Concierge Agent with function-calling for intent parsing.
  *
- * Model: gemini-2.0-flash (free tier, 15 RPM)
- * API Key from EchoDJ project: AIzaSyDpa2Gq6KeFiUUxO2a_zNctLMZlA9HnyuU
- */
-
-const GEMINI_API_KEY = 'AIzaSyDpa2Gq6KeFiUUxO2a_zNctLMZlA9HnyuU';
+const GEMINI_API_KEY = import.meta.env?.VITE_GEMINI_API_KEY;
 const MODELS = {
   fast: 'gemini-2.0-flash',
   reasoning: 'gemini-2.0-flash'

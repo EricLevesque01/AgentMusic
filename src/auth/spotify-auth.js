@@ -15,8 +15,7 @@
 const SPOTIFY_AUTH_URL  = 'https://accounts.spotify.com/authorize';
 const SPOTIFY_TOKEN_URL = 'https://accounts.spotify.com/api/token';
 
-// Reusing the same Spotify app from EchoDJ
-const CLIENT_ID    = '8da83c7669ee4a938536b54a22f120c7';
+const CLIENT_ID    = import.meta.env?.VITE_SPOTIFY_CLIENT_ID;
 const REDIRECT_URI = 'http://127.0.0.1:5173/';  // Vite dev server
 
 // Scopes needed for TasteGraph

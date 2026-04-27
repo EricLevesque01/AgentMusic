@@ -101,23 +101,29 @@ async function init() {
     pageContainer.innerHTML = `
       <div class="page" style="display:flex;align-items:center;justify-content:center;min-height:80vh;">
         <div class="glass-card" style="padding:var(--space-8);text-align:center;">
-          <div style="font-size:2rem;margin-bottom:var(--space-4);">🔄</div>
+          <div style="font-size:2rem;margin-bottom:var(--space-4);animation:pulse 1s infinite;">🔄</div>
           <p style="color:var(--text-secondary);">Connecting to Spotify...</p>
         </div>
       </div>
     `;
     const success = await handleCallback();
     if (!success) {
-      pageContainer.innerHTML = `
-        <div class="page" style="display:flex;align-items:center;justify-content:center;min-height:80vh;">
-          <div class="glass-card" style="padding:var(--space-8);text-align:center;">
-            <div style="font-size:2rem;margin-bottom:var(--space-4);">❌</div>
-            <p style="color:var(--text-secondary);margin-bottom:var(--space-4);">Connection failed. Please try again.</p>
-            <button class="btn btn-primary" onclick="location.href='/'">Retry</button>
+      if (isAuthenticated()) {
+        // They probably just refreshed the ?code= callback page, and are already logged in.
+        // Clean up the URL and continue loading the app.
+        window.history.replaceState({}, document.title, '/#/');
+      } else {
+        pageContainer.innerHTML = `
+          <div class="page" style="display:flex;align-items:center;justify-content:center;min-height:80vh;">
+            <div class="glass-card" style="padding:var(--space-8);text-align:center;">
+              <div style="font-size:2rem;margin-bottom:var(--space-4);">❌</div>
+              <p style="color:var(--text-secondary);margin-bottom:var(--space-4);">Connection failed or expired. Please try again.</p>
+              <button class="btn btn-primary" onclick="location.href='/'">Retry Login</button>
+            </div>
           </div>
-        </div>
-      `;
-      return;
+        `;
+        return;
+      }
     }
   }
 

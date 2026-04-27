@@ -35,7 +35,7 @@ describe('Orchestrator', () => {
       trackExplanations: new Map([['t1', 'Test explanation']]),
     });
 
-    const context = await orchestrator.generatePlaylist('user1', { discovery: 0.8 });
+    const context = await orchestrator.generatePlaylist('user1', 'a rock mix');
 
     expect(statusCallback).toHaveBeenCalledWith('profiler', false);
     expect(statusCallback).toHaveBeenCalledWith('scout', false);
@@ -44,7 +44,7 @@ describe('Orchestrator', () => {
     expect(statusCallback).toHaveBeenCalledWith('narrator', true);
 
     expect(context.userId).toBe('user1');
-    expect(context.sliders.discovery).toBe(0.8);
+    expect(context.sessionIntent).toBe('a rock mix');
     expect(context.tasteState.topGenres).toContain('rock');
     expect(context.scoredPlaylist.length).toBe(1);
     expect(context.explanations.playlistSummary).toBe('Test summary');

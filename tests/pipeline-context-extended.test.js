@@ -114,47 +114,9 @@ describe('PipelineContext — Phase 2 inter-agent fields', () => {
     });
   });
 
-  describe('deriveWeights() — boundary behavior', () => {
-    it('should produce all positive weights', () => {
-      for (const d of [0, 0.25, 0.5, 0.75, 1.0]) {
-        const w = PipelineContext.create('u', { discovery: d }).deriveWeights();
-        expect(w.W_elo).toBeGreaterThan(0);
-        expect(w.W_session).toBeGreaterThan(0);
-        expect(w.W_graph).toBeGreaterThan(0);
-        expect(w.W_audio).toBeGreaterThan(0);
-      }
-    });
-
-    it('should make W_session constant regardless of discovery', () => {
-      // Session weight is always 0.25 (before normalization)
-      // But after normalization it will vary slightly — just check it's stable
-      const w1 = PipelineContext.create('u', { discovery: 0.0 }).deriveWeights();
-      const w2 = PipelineContext.create('u', { discovery: 1.0 }).deriveWeights();
-      // Session weight ratio should stay in a narrow band
-      expect(w1.W_session).toBeGreaterThan(0.2);
-      expect(w2.W_session).toBeGreaterThan(0.2);
-    });
-
-    it('W_elo at discovery=0 should be roughly 3.5x W_elo at discovery=1', () => {
-      const low = PipelineContext.create('u', { discovery: 0 }).deriveWeights();
-      const high = PipelineContext.create('u', { discovery: 1 }).deriveWeights();
-      const ratio = low.W_elo / high.W_elo;
-      expect(ratio).toBeGreaterThan(2);
-      expect(ratio).toBeLessThan(5);
-    });
-
-    it('W_graph at discovery=1 should be roughly 4x W_graph at discovery=0', () => {
-      const low = PipelineContext.create('u', { discovery: 0 }).deriveWeights();
-      const high = PipelineContext.create('u', { discovery: 1 }).deriveWeights();
-      const ratio = high.W_graph / low.W_graph;
-      expect(ratio).toBeGreaterThan(2);
-      expect(ratio).toBeLessThan(6);
-    });
-  });
-
   describe('create() factory', () => {
     it('should accept a custom sessionId', () => {
-      const ctx = PipelineContext.create('u', {}, 'my-custom-session');
+      const ctx = PipelineContext.create('u', 'chill vibes', 'my-custom-session');
       expect(ctx.sessionId).toBe('my-custom-session');
     });
 
@@ -163,13 +125,9 @@ describe('PipelineContext — Phase 2 inter-agent fields', () => {
       expect(ctx.sessionId).toMatch(/^session_\d+_[a-z0-9]+$/);
     });
 
-    it('should default all sliders to 0.5 when none provided', () => {
+    it('should default sessionIntent when not provided', () => {
       const ctx = PipelineContext.create('u');
-      expect(ctx.sliders.discovery).toBe(0.5);
-      expect(ctx.sliders.popularity).toBe(0.5);
-      expect(ctx.sliders.focus).toBe(0.5);
-      expect(ctx.sliders.energy).toBe(0.5);
-      expect(ctx.sliders.novelty).toBe(0.5);
+      expect(ctx.sessionIntent).toBe('A balanced mix of my top S-Tier artists and some similar discoveries.');
     });
   });
 });

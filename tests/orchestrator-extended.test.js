@@ -167,12 +167,20 @@ describe('Orchestrator — handleConciergeAction', () => {
     await orch.generatePlaylist('user1', { discovery: 0.5 });
   });
 
-  it('should handle adjust_sliders action', async () => {
+  it('should handle adjust_sliders legacy action by setting a generic sessionIntent and reranking', async () => {
     const result = await orch.handleConciergeAction({
       type: 'adjust_sliders',
       sliders: { discovery: 0.9 },
     });
-    expect(result.sliders.discovery).toBe(0.9);
+    expect(result.sessionIntent).toBe("User requested a slight vibe adjustment.");
+  });
+
+  it('should handle create_playlist action', async () => {
+    const result = await orch.handleConciergeAction({
+      type: 'create_playlist',
+      theme: 'a chill mix',
+    });
+    expect(result.sessionIntent).toBe('a chill mix');
   });
 
   it('should handle boost_genre action', async () => {

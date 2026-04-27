@@ -17,6 +17,7 @@ import { DataStore } from '../../data/data-store.js';
 import { getSimilarArtists } from '../../data/lastfm-api.js';
 import { getArtistTopTracks, searchArtist, searchArtists } from '../../data/spotify-api.js';
 import { initSpotifyPlayer, playTrack, pauseTrack } from '../../data/spotify-player.js';
+import { callWithTools } from '../../data/gemini-api.js';
 import * as elo from '../../engine/elo.js';
 
 const DEFAULT_ELO = 1500;
@@ -115,6 +116,7 @@ export class TasteGame {
     this.injectedQueue = []; // queue of LLM-injected artists
     this.calibrationTask = null; // Beli-style binary search state
     this.winStreaks    = {}; // Track hot streaks for dynamic expansion
+    this.sessionAppearances = {}; // track appearances to cooldown anchors
 
     // Listen for LLM injections
     window.addEventListener('tastegraph:inject-artists', async (e) => {
@@ -469,9 +471,15 @@ export class TasteGame {
     // Filter ALL pools by information gain — settled/ignored artists are excluded
     const viableAll = this.allArtists.filter(a => this._getInfoGainWeight(eloRatings[a.id]) > 0);
 
-    // Benchmarks: Known artists sorted by Elo
+    // Benchmarks: Known artists sorted by Elo, capped at 2 appearances per session
+    // unless they are also an active contender (info gain > 0).
+    // The user requested: "After it shows up 2 times, if it is not a contender, then we don't include it for the rest of the session"
     const knownRanked = this.knownArtists
-      .slice()
+      .filter(a => {
+         const appearances = this.sessionAppearances[a.id] || 0;
+         const isContender = this._getInfoGainWeight(eloRatings[a.id]) > 0;
+         return appearances < 2 || isContender;
+      })
       .sort((a, b) => (eloRatings[b.id]?.rating || 1500) - (eloRatings[a.id]?.rating || 1500));
 
     // 1. Concierge Injection (Highest Priority)
@@ -523,6 +531,9 @@ export class TasteGame {
       this.renderError('Not enough distinct artists to continue. Try generating a playlist!');
       return;
     }
+
+    this.sessionAppearances[pair.A.id] = (this.sessionAppearances[pair.A.id] || 0) + 1;
+    this.sessionAppearances[pair.B.id] = (this.sessionAppearances[pair.B.id] || 0) + 1;
 
     this.isLoading = true;
     this.pair = pair;
@@ -648,6 +659,14 @@ export class TasteGame {
       }
     }
     
+    // Record the exact matchup so we NEVER recycle this exact pair again, even if skipped
+    for (const artist of [this.pair.A, this.pair.B]) {
+      if (!ratings[artist.id]) ratings[artist.id] = { rating: 1500, skips: 0, matchups: {} };
+      if (!ratings[artist.id].matchups) ratings[artist.id].matchups = {};
+    }
+    ratings[this.pair.A.id].matchups[this.pair.B.id] = true;
+    ratings[this.pair.B.id].matchups[this.pair.A.id] = true;
+    
     DataStore.setEloRatings(ratings);
     this.nextRound();
   }
@@ -671,12 +690,13 @@ export class TasteGame {
     this.renderMatchup();
   }
 
-  handleFinish() {
+  async handleFinish() {
     // Stop any playing audio
     document.querySelectorAll('audio').forEach(a => { a.pause(); a.currentTime = 0; });
     try { if (window.pauseTrack) window.pauseTrack(); } catch(e) {}
     
-    this.renderSummary();
+    this.renderLoading('Synthesizing your taste identity...');
+    await this.renderSummary();
   }
 
   // --- Rendering ---
@@ -899,9 +919,26 @@ export class TasteGame {
     `;
   }
 
-  renderSummary() {
+  async renderSummary() {
     const topRanked = this.profiler.getTopRankedArtists(10);
     const knownIds  = new Set(this.knownArtists.map(a => a.id));
+    const discoveriesRanked = topRanked.filter(a => !knownIds.has(a.id));
+
+    let insightText = '';
+    try {
+      const topNames = topRanked.slice(0, 5).map(a => a.name).join(', ');
+      const newNames = discoveriesRanked.slice(0, 3).map(a => a.name).join(', ');
+      const prompt = `You are a music profiling agent. The user just finished a taste calibration game (played ${this.roundsPlayed} rounds). 
+Their top 5 artists are now: ${topNames}.
+They discovered and ranked highly these new artists: ${newNames || 'None'}.
+Write a friendly, 2-3 sentence summary of what this session revealed about their music taste and how their profile has evolved. Keep it concise, insightful, and engaging. Address the user directly as "you". Do not use markdown.`;
+      
+      const response = await callWithTools(prompt, [{ role: 'user', parts: [{ text: 'Summarize my session.' }] }]);
+      insightText = response.textReply;
+    } catch (err) {
+      console.error("Failed to generate summary insight:", err);
+      insightText = "Your taste profile has been successfully calibrated and updated with new discoveries!";
+    }
 
     const topHtml = topRanked.map((a, i) => {
       const isNew = !knownIds.has(a.id);
@@ -920,8 +957,6 @@ export class TasteGame {
       `;
     }).join('');
 
-    const discoveriesRanked = topRanked.filter(a => !knownIds.has(a.id));
-
     this.container.innerHTML = `
       <div class="glass-card" style="padding: var(--space-8); max-width: 600px; margin: 0 auto;">
         <div style="text-align: center; margin-bottom: var(--space-6);">
@@ -931,6 +966,15 @@ export class TasteGame {
             ${this.roundsPlayed} rounds played · ${this.allArtists.length} artists in pool
             ${discoveriesRanked.length ? ` · <span style="color:var(--accent-secondary);">${discoveriesRanked.length} new artists discovered</span>` : ''}
           </p>
+        </div>
+        
+        <div style="background: rgba(139, 92, 246, 0.1); border: 1px solid rgba(139, 92, 246, 0.2); border-radius: var(--radius-lg); padding: var(--space-4); margin-bottom: var(--space-6);">
+          <div style="display: flex; gap: var(--space-3); align-items: flex-start;">
+            <span style="font-size: 1.5rem;">🤖</span>
+            <p style="color: var(--text-primary); font-size: var(--font-size-md); line-height: 1.5; margin: 0;">
+              ${insightText}
+            </p>
+          </div>
         </div>
 
         <h3 style="font-size: var(--font-size-sm); font-weight: var(--font-weight-semibold); color: var(--text-muted); margin-bottom: var(--space-3); text-transform: uppercase; letter-spacing: 0.06em;">Your Top Ranked</h3>

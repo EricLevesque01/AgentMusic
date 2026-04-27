@@ -40,22 +40,21 @@ describe('ConciergeAgent', () => {
       expect(actions.some(a => a.type === 'penalize_genre' && a.genre.toLowerCase() === 'pop')).toBe(true);
     });
 
-    it('should parse "make it more chill" → adjust_sliders with low energy', async () => {
+    it('should parse "make it more chill" → create_playlist with chill theme', async () => {
       vi.spyOn(geminiApi, 'callWithTools').mockRejectedValue(new Error('offline'));
       const agent = new ConciergeAgent();
       const { actions } = await agent.chat('make it more chill', mockContext);
-      const sliderAction = actions.find(a => a.type === 'adjust_sliders');
-      expect(sliderAction).toBeTruthy();
-      expect(sliderAction.sliders.energy).toBeLessThan(0.5);
+      const playlistAction = actions.find(a => a.type === 'create_playlist');
+      expect(playlistAction).toBeTruthy();
+      expect(playlistAction.theme).toContain('chill');
     });
 
-    it('should parse "discover something new" → adjust_sliders with high discovery', async () => {
+    it('should parse "what is my vibe" → create_playlist with vibe theme', async () => {
       vi.spyOn(geminiApi, 'callWithTools').mockRejectedValue(new Error('offline'));
       const agent = new ConciergeAgent();
-      const { actions } = await agent.chat('discover something new', mockContext);
-      const sliderAction = actions.find(a => a.type === 'adjust_sliders');
-      // discovery should be boosted
-      expect(sliderAction?.sliders?.discovery).toBeGreaterThan(0.5);
+      const { actions } = await agent.chat('what is my vibe', mockContext);
+      const playlistAction = actions.find(a => a.type === 'create_playlist');
+      expect(playlistAction?.theme).toContain('vibe');
     });
   });
 
@@ -71,15 +70,15 @@ describe('ConciergeAgent', () => {
       expect(actions[0]).toMatchObject({ type: 'boost_genre', genre: 'jazz' });
     });
 
-    it('should parse Gemini adjust_sliders function call', async () => {
+    it('should parse Gemini create_playlist function call', async () => {
       vi.spyOn(geminiApi, 'callWithTools').mockResolvedValue({
-        functionCalls: [{ name: 'adjust_sliders', args: { energy: 0.2 } }],
+        functionCalls: [{ name: 'create_playlist', args: { theme: 'study beats' } }],
         textReply: '',
       });
 
       const agent = new ConciergeAgent();
-      const { actions } = await agent.chat('make it chill', mockContext);
-      expect(actions[0]).toMatchObject({ type: 'adjust_sliders', sliders: { energy: 0.2 } });
+      const { actions } = await agent.chat('make a study playlist', mockContext);
+      expect(actions[0]).toMatchObject({ type: 'create_playlist', theme: 'study beats' });
     });
   });
 

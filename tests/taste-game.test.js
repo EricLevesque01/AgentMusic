@@ -180,4 +180,69 @@ describe('TasteGame Pairing Logic', () => {
     expect(updatedRatings['new1'].matchups['mid2']).toBe(true);
     expect(updatedRatings['mid2'].matchups['new1']).toBe(true);
   });
+
+  it('10. handleSkip should save matchups in both directions to prevent recycling', () => {
+    game.pair = { A: { id: 'new1' }, B: { id: 'mid2' } };
+    game.isLoading = false;
+    game.nextRound = vi.fn(); // Stub nextRound
+    
+    DataStore.getEloRatings.mockReturnValue({
+      'new1': { rating: 1500, comparison_count: 0 },
+      'mid2': { rating: 1500, comparison_count: 8 }
+    });
+    
+    const setEloSpy = vi.spyOn(DataStore, 'setEloRatings');
+    game.handleSkip();
+    
+    const updatedRatings = setEloSpy.mock.calls[setEloSpy.mock.calls.length - 1][0];
+    expect(updatedRatings['new1'].matchups['mid2']).toBe(true);
+    expect(updatedRatings['mid2'].matchups['new1']).toBe(true);
+    expect(updatedRatings['new1'].skips).toBe(1);
+    expect(updatedRatings['mid2'].skips).toBe(1);
+  });
+
+  it('11. should properly rotate options and not recycle the same exact pair over 50 rounds', () => {
+    const ratings = DataStore.getEloRatings();
+    
+    // Create a larger pool
+    for (let i = 0; i < 20; i++) {
+       game.allArtists.push({ id: `contender_${i}`, name: `Contender ${i}` });
+       ratings[`contender_${i}`] = { rating: 1500, comparison_count: 0, matchups: {} };
+    }
+    
+    // Simulate DataStore mutations
+    vi.spyOn(DataStore, 'setEloRatings').mockImplementation((newR) => {
+       Object.assign(ratings, newR);
+    });
+    DataStore.getEloRatings.mockReturnValue(ratings);
+
+    const pairHistory = new Set();
+    const anchorFrequencies = {};
+
+    for (let i = 0; i < 50; i++) {
+       const pair = game._selectStrategicPair();
+       
+       // Record matchup exactly like handleChoice or handleSkip would
+       ratings[pair.A.id].matchups = ratings[pair.A.id].matchups || {};
+       ratings[pair.B.id].matchups = ratings[pair.B.id].matchups || {};
+       ratings[pair.A.id].matchups[pair.B.id] = true;
+       ratings[pair.B.id].matchups[pair.A.id] = true;
+       ratings[pair.A.id].comparison_count = (ratings[pair.A.id].comparison_count || 0) + 1;
+       ratings[pair.B.id].comparison_count = (ratings[pair.B.id].comparison_count || 0) + 1;
+       
+       const pairKey = [pair.A.id, pair.B.id].sort().join('-vs-');
+       
+       // Assert the pair is unique
+       expect(pairHistory.has(pairKey)).toBe(false);
+       pairHistory.add(pairKey);
+       
+       // Track anchor frequency (assuming B is often the anchor if A is a contender)
+       anchorFrequencies[pair.B.id] = (anchorFrequencies[pair.B.id] || 0) + 1;
+       anchorFrequencies[pair.A.id] = (anchorFrequencies[pair.A.id] || 0) + 1;
+    }
+    
+    // Check that top1 and top2 aren't picked for *every* single round (they should rotate among benchmarks)
+    expect(anchorFrequencies['top1'] || 0).toBeLessThan(50);
+    expect(anchorFrequencies['bot1'] || 0).toBeLessThan(5); // Bot1 shouldn't be picked much since it's far from 1500
+  });
 });

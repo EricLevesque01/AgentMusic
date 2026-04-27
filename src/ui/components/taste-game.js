@@ -423,7 +423,7 @@ export class TasteGame {
     // Calculate distance for all valid anchors
     const candidates = [];
     for (const anchor of knownRanked) {
-      if (anchor.id === targetId || this._hasPlayed(targetId, anchor.id)) continue;
+      if (anchor.id === targetId || this._hasPlayed(targetId, anchor.id, eloRatings)) continue;
       const anchorElo = eloRatings[anchor.id]?.rating || 1500;
       candidates.push({ anchor, diff: Math.abs(anchorElo - targetElo) });
     }
@@ -439,8 +439,8 @@ export class TasteGame {
     return topCandidates[Math.floor(Math.random() * topCandidates.length)].anchor;
   }
 
-  _hasPlayed(aId, bId) {
-    const eloRatings = DataStore.getEloRatings();
+  _hasPlayed(aId, bId, eloRatingsParam = null) {
+    const eloRatings = eloRatingsParam || DataStore.getEloRatings();
     return eloRatings[aId]?.matchups?.[bId] === true;
   }
 
@@ -474,7 +474,7 @@ export class TasteGame {
     if (this.roundsPlayed <= 4 && viableAll.length >= 2) {
       const a = viableAll[Math.floor(Math.random() * viableAll.length)];
       const aGenres = new Set(a.genres || []);
-      const clashCandidates = viableAll.filter(c => c.id !== a.id && !this._hasPlayed(a.id, c.id) && !(c.genres || []).some(g => aGenres.has(g)));
+      const clashCandidates = viableAll.filter(c => c.id !== a.id && !this._hasPlayed(a.id, c.id, eloRatings) && !(c.genres || []).some(g => aGenres.has(g)));
       if (clashCandidates.length > 0) {
         const b = clashCandidates[Math.floor(Math.random() * clashCandidates.length)];
         return { A: a, B: b, strategy: 'clash', insight: '🌍 Broad Exploration: Which style do you prefer?' };

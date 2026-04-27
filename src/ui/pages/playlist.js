@@ -4,6 +4,23 @@ import { PlaylistView } from '../components/playlist-view.js';
 import { DataStore } from '../../data/data-store.js';
 
 export function renderPlaylistPage(container) {
+  const tasteState = DataStore.get('tasteState') || {};
+  const topGenres = tasteState.topGenres || [];
+  const topArtists = tasteState.topRankedArtists || [];
+
+  const topGenre = topGenres.length > 0 ? topGenres[0] : 'midwest emo';
+  const topArtist = topArtists.length > 0 ? topArtists[0].name : 'Charli XCX';
+  const secondArtist = topArtists.length > 1 ? topArtists[1].name : 'Radiohead';
+
+  const placeholders = [
+    `e.g. 'Find me ${topGenre} bands blowing up on Reddit'`,
+    `e.g. 'Aggressive hype music like ${topArtist}'`,
+    `e.g. 'Deep cuts from the golden era of ${topGenre}'`,
+    `e.g. 'What are ${topArtist} and ${secondArtist} fans listening to right now?'`,
+    `e.g. 'Just play my favorites...'`
+  ];
+  const randomPlaceholder = placeholders[Math.floor(Math.random() * placeholders.length)];
+
   container.innerHTML = `
     <div class="page" id="page-playlist">
       <header class="page-header" style="display:flex; justify-content:space-between; align-items:center;">
@@ -17,7 +34,7 @@ export function renderPlaylistPage(container) {
         </h3>
         <p style="color: var(--text-muted); font-size: var(--font-size-sm); margin-bottom: var(--space-4);">Tell your intelligent music agents what to look for. They can search the web, analyze forums, and deep-dive into niche genres.</p>
         
-        <textarea id="vibe-input" rows="3" placeholder="e.g. 'Find me midwest emo bands blowing up on Reddit', 'Aggressive hype music like Charli XCX', or 'Just play my favorites...'" 
+        <textarea id="vibe-input" rows="3" placeholder="${randomPlaceholder}" 
           style="width: 100%; background: var(--bg-surface); border: 1px solid var(--border-glass); border-radius: var(--radius-md); padding: var(--space-3); color: var(--text-primary); font-family: var(--font-family); font-size: var(--font-size-md); resize: none; margin-bottom: var(--space-4); outline: none; transition: border-color var(--transition-fast);"
           onfocus="this.style.borderColor='var(--accent-primary)'" onblur="this.style.borderColor='var(--border-glass)'"></textarea>
 

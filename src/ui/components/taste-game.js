@@ -207,8 +207,9 @@ export class TasteGame {
    * Fetches similar artists for each seed, searches Spotify, deduplicates.
    */
   async _expandPool(seedArtists, topGenres) {
-    const knownIds  = new Set(this.knownArtists.map(a => a.id));
-    const namesSeen = new Set(this.knownArtists.map(a => a.name.toLowerCase()));
+    const allExisting = [...this.knownArtists, ...this.relatedArtists];
+    const knownIds  = new Set(allExisting.map(a => a.id));
+    const namesSeen = new Set(allExisting.map(a => a.name.toLowerCase()));
     const resolved  = [];
 
     // Fetch similar artists from Last.fm in parallel (batch 3 at a time)
@@ -237,7 +238,11 @@ export class TasteGame {
       }
     }
 
-    this.relatedArtists = resolved;
+    // Append new discoveries instead of overwriting the pool
+    const existingIds = new Set(this.relatedArtists.map(a => a.id));
+    for (const a of resolved) {
+       if (!existingIds.has(a.id)) this.relatedArtists.push(a);
+    }
   }
 
   /**
@@ -592,14 +597,20 @@ export class TasteGame {
       winCard.style.boxShadow  = 'var(--shadow-glow-strong)';
     }
 
-    // Dynamic Expansion: Every 3 rounds, use the *winner* of the current round
-    // to fetch similar artists. This makes the game highly responsive to what you are 
-    // actively enjoying in the moment, constantly surfacing new adjacent artists.
-    if (this.roundsPlayed % 3 === 0) {
+    // Dynamic Expansion: Constantly create new contenders based on preferences
+    if (this.roundsPlayed % 2 === 0) {
+      // Every 2 rounds: fetch similar artists based on the *winner* of the current round
+      // This makes the game highly responsive to what they are enjoying in the moment.
       const winnerArtist = [this.pair.A, this.pair.B].find(a => a.id === winnerId);
       if (winnerArtist) {
-        // Expand in background without blocking UI
         this._expandPool([winnerArtist], []).then(() => this._mergePools());
+      }
+    } else if (this.roundsPlayed % 5 === 0) {
+      // Every 5 rounds: fetch new artists based on their overall Top 3 favorites
+      // This ensures we are always creating contenders based on their core preferences.
+      const topFavorites = this.profiler.getTopRankedArtists(3);
+      if (topFavorites.length > 0) {
+        this._expandPool(topFavorites, []).then(() => this._mergePools());
       }
     }
 

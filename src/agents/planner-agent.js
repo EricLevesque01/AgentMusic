@@ -1,4 +1,5 @@
 import { callWithTools } from '../data/gemini-api.js';
+import { MACRO_GENRES } from '../data/genre-taxonomy.js';
 
 export class PlannerAgent {
   /**
@@ -27,10 +28,15 @@ Your job is to analyze the user's intent and output a strict JSON research plan 
 USER INTENT: "${sessionIntent}"
 BACKGROUND TASTE: Top Genres: ${topGenres.slice(0, 5).join(', ')}
 
+AVAILABLE GENRE TAXONOMY (For precise targeting):
+${Object.entries(MACRO_GENRES).map(([macro, subs]) => `- ${macro}: ${subs.slice(0, 8).join(', ')}...`).join('\n')}
+
 AVAILABLE TOOLS (Scout Execution Endpoints):
 - "searchArtist": { "query": string } -> Fetches top tracks for a specific artist.
 - "getSimilarArtists": { "artist": string } -> Fetches Last.fm crowdsourced overlap (what other real people listen to).
-- "getRecommendations": { "seed_genres": string[] } -> Algorithmic Spotify discovery based on genres.
+- "searchCulturalWeb": { "query": string } -> Connects to the Live Internet via Google Search to scrape forums (e.g., Reddit r/popheads, r/indieheads), blogs (Pitchfork), or current news to find exactly what people are saying online right now. Example query: "What are the best underground midwest emo bands blowing up on Reddit right now?"
+- "getRecommendations": { "seed_genres": string[] } -> Algorithmic Spotify discovery.
+- "searchTracks": { "query": string } -> Use advanced Spotify query syntax (e.g., "genre:indie rock year:2020-2023").
 - "getTopArtists": {} -> Fetches tracks strictly from the user's historical favorites.
 - "getTrendingSignals": { "topic": string } -> Fetches currently trending internet tracks from local database.
 

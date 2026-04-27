@@ -15,18 +15,25 @@ const MODELS = {
  * @param {Array}    messages          - { role: 'user'|'model', parts: [{text}] }[]
  * @param {Array}    toolDeclarations  - Gemini function declarations
  * @param {string}   modelTier         - 'fast' (default) or 'reasoning'
+ * @param {boolean}  useWebSearch      - Whether to enable Google Search grounding
  * @returns {{ functionCalls, textReply }}
  */
-export async function callWithTools(systemPrompt, messages, toolDeclarations = [], modelTier = 'fast') {
+export async function callWithTools(systemPrompt, messages, toolDeclarations = [], modelTier = 'fast', useWebSearch = false) {
   const modelName = MODELS[modelTier] || MODELS.fast;
   const url = `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${GEMINI_API_KEY}`;
+
+  const toolsObj = [];
+  if (toolDeclarations.length > 0) {
+    toolsObj.push({ function_declarations: toolDeclarations });
+  }
+  if (useWebSearch) {
+    toolsObj.push({ google_search: {} });
+  }
 
   const body = {
     system_instruction: { parts: [{ text: systemPrompt }] },
     contents: messages,
-    tools: toolDeclarations.length
-      ? [{ function_declarations: toolDeclarations }]
-      : undefined,
+    tools: toolsObj.length > 0 ? toolsObj : undefined,
     generationConfig: {
       temperature:     0.7,
       maxOutputTokens: toolDeclarations.length > 0 ? 2048 : 512,

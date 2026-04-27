@@ -70,8 +70,7 @@ export class Orchestrator {
       context.tasteState,
       context.candidatePool,
       context.sessionIntent,
-      context.sessionAdjustments,
-      context,
+      context.researchPlan?.strategy || "Standard exploration based on historical favorites.",
       this._reportThought.bind(this)
     );
 
@@ -106,8 +105,7 @@ export class Orchestrator {
       this._lastContext.tasteState,
       this._lastContext.candidatePool,
       this._lastContext.sessionIntent,
-      this._lastContext.sessionAdjustments,
-      this._lastContext,
+      this._lastContext.researchPlan?.strategy || "User requested a slight vibe adjustment.",
       this._reportThought.bind(this)
     );
 

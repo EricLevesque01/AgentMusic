@@ -34,7 +34,13 @@ export function renderHomePage(container) {
       </div>
 
       <div style="display: flex; flex-direction: column; gap: var(--space-3); max-width: 320px;">
-        <button class="btn btn-primary btn-lg" onclick="location.hash='#/game'" style="justify-content: flex-start;">
+        <button class="btn btn-primary btn-lg" onclick="document.getElementById('chat-fab')?.click()" style="justify-content: flex-start; box-shadow: var(--shadow-glow-strong);">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0;">
+            <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path>
+          </svg>
+          Chat with Agent Music
+        </button>
+        <button class="btn btn-secondary btn-lg" onclick="location.hash='#/game'" style="justify-content: flex-start;">
           <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0;">
             <circle cx="4" cy="8" r="3"/><circle cx="12" cy="8" r="3"/>
             <path d="M7 8h2"/>

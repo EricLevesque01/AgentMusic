@@ -40,7 +40,8 @@ export class CuratorAgent {
       id: c.track.id,
       name: c.track.name,
       artist: c.artistName,
-      genres: c.tags?.slice(0, 3).join(', ') || 'Unknown'
+      genres: c.tags?.slice(0, 3).join(', ') || 'Unknown',
+      source: c.source || 'unknown'
     }));
 
     const systemPrompt = `You are a Fast Music Curator Agent.
@@ -51,13 +52,14 @@ USER TASTE PROFILE:
 - Top Genres: ${topGenres}
 
 SESSION INTENT: "${sessionIntent || 'General vibe'}"
-(CRITICAL: If the intent specifies a genre like 'Jazz', you MUST prioritize tracks that fit that genre over the user's top artists).
+(CRITICAL: If the intent specifies a genre or vibe, you MUST prioritize tracks that fit it over the user's top artists. Look at the 'source' field; heavily prioritize tracks marked 'intent_override' or 'trending_signal'!).
 
 RULES:
 1. Select exactly ${MAX_TRACKS} tracks.
 2. Max ${MAX_PER_ARTIST} tracks per artist.
-3. Return ONLY a valid JSON array of objects.
-4. Each object must have:
+3. Prioritize tracks with source="intent_override" if they match the Session Intent.
+4. Return ONLY a valid JSON array of objects.
+5. Each object must have:
    - "id": the track ID
    - "reason": a short, 1-sentence explanation of why it fits the intent or the user's taste.
 

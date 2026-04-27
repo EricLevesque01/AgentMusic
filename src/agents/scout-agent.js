@@ -112,8 +112,9 @@ export class ScoutAgent {
     
     const prompt = `You are a music discovery agent. The user's current session intent is: "${sessionIntent}". 
 Their top genres are: ${topGenres.join(', ')}. 
-If the user is asking for specific genres, vibes, or artists that are significantly different from their top genres, you MUST call 'submit_search_queries' with up to 3 Spotify search queries (e.g. "genre:jazz", "artist:miles davis") to satisfy their request.
-If their request is generic (e.g., "play my favorites", "give me a mix"), return an empty array.`;
+Analyze the intent. You MUST call the 'submit_search_queries' tool.
+If the intent asks for specific genres, vibes, or artists (e.g. "MJ Lenderman", "Jazz", "Alt-country"), provide up to 3 Spotify search queries (e.g. "genre:jazz", "artist:mj lenderman").
+If the intent is generic (e.g., "play my favorites"), call the tool with an empty array for queries.`;
 
     const toolDecls = [{
       name: 'submit_search_queries',
@@ -131,6 +132,7 @@ If their request is generic (e.g., "play my favorites", "give me a mix"), return
       const result = await callWithTools(prompt, [{ role: 'user', parts: [{ text: 'Extract search queries if needed.' }] }], toolDecls);
       const submitCall = result.functionCalls.find(fc => fc.name === 'submit_search_queries');
       if (submitCall && submitCall.args && submitCall.args.queries) {
+        console.log("Scout Intent Override: Extracted queries:", submitCall.args.queries);
         for (const query of submitCall.args.queries) {
           try {
             const tracks = await searchTracks(query, 5);

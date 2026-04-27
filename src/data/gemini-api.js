@@ -2,6 +2,7 @@
  * TasteGraph — Gemini API Wrapper
  * Powers the Concierge Agent with function-calling for intent parsing.
  *
+ */
 const GEMINI_API_KEY = import.meta.env?.VITE_GEMINI_API_KEY;
 const MODELS = {
   fast: 'gemini-2.0-flash',

@@ -7,7 +7,7 @@
  */
 
 const LASTFM_BASE = 'https://ws.audioscrobbler.com/2.0/';
-const LASTFM_KEY  = 'a115deb44dbd0710d1e9f81f0b563e76';
+const LASTFM_KEY  = import.meta.env?.VITE_LASTFM_API_KEY;
 
 import { DataStore } from './data-store.js';
 

@@ -292,7 +292,10 @@ export class TasteGame {
   _getInfoGainWeight(eloData) {
     if (!eloData) return 3; // Never compared = maximum weight
     
-    // If skipped excessively (user doesn't know them), they are dead to us.
+    // If explicitly ignored ("Don't know this artist"), they are dead to us.
+    if (eloData.ignored) return 0;
+    
+    // If skipped excessively, they are dead to us.
     if ((eloData.skips || 0) >= 3 && (eloData.comparison_count || 0) === 0) return 0;
     
     const comps = eloData.comparison_count || 0;
@@ -823,6 +826,8 @@ export class TasteGame {
     if (artistIdToDrop) {
       if (!ratings[artistIdToDrop]) ratings[artistIdToDrop] = { rating: 1500, skips: 0 };
       ratings[artistIdToDrop].skips = (ratings[artistIdToDrop].skips || 0) + 5; // permanently filter them
+      ratings[artistIdToDrop].ignored = true; // explicitly mark as "Don't know"
+      
       if (this.calibrationTask && this.calibrationTask.targetId === artistIdToDrop) {
         this.calibrationTask = null; // Drop the calibration task if target is unknown
       }

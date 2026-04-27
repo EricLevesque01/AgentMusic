@@ -53,13 +53,13 @@ export class ProfileView {
         <!-- Hero: Taste DNA + Top Artist -->
         <div style="display: grid; grid-template-columns: 1fr; gap: var(--space-4);">
           <!-- Taste DNA Hero Card -->
-          <div style="background: linear-gradient(135deg, rgba(139, 92, 246, 0.12), rgba(59, 130, 246, 0.08)); border: 1px solid rgba(139, 92, 246, 0.25); border-radius: var(--radius-xl); padding: var(--space-6); position: relative; overflow: hidden; display: flex; align-items: center; gap: var(--space-6);">
+          <div style="background: linear-gradient(135deg, rgba(61, 139, 255, 0.12), rgba(99, 102, 241, 0.08)); border: 1px solid rgba(61, 139, 255, 0.25); border-radius: var(--radius-xl); padding: var(--space-6); position: relative; overflow: hidden; display: flex; align-items: center; gap: var(--space-6);">
             <div style="position: absolute; top: -20px; right: -20px; opacity: 0.04; transform: rotate(15deg); font-size: 150px;">🧬</div>
             
             <!-- Top Artist Avatar -->
             <div style="flex-shrink: 0; position: relative;">
               ${stats.topArtistImage 
-                ? `<img src="${stats.topArtistImage}" style="width: 120px; height: 120px; border-radius: 50%; object-fit: cover; border: 4px solid var(--accent-primary); box-shadow: 0 0 20px rgba(139, 92, 246, 0.4);">` 
+                ? `<img src="${stats.topArtistImage}" style="width: 120px; height: 120px; border-radius: 50%; object-fit: cover; border: 4px solid var(--accent-primary); box-shadow: 0 0 24px rgba(61, 139, 255, 0.35);">` 
                 : `<div style="width: 120px; height: 120px; border-radius: 50%; background: var(--bg-tertiary); display: flex; align-items: center; justify-content: center; border: 4px solid var(--accent-primary); color: var(--text-muted); font-size: 48px;">👤</div>`}
               <div style="position: absolute; bottom: -10px; left: 50%; transform: translateX(-50%); background: var(--accent-primary); color: white; font-size: 10px; padding: 2px 8px; border-radius: 12px; font-weight: bold; white-space: nowrap; box-shadow: 0 2px 10px rgba(0,0,0,0.5);">#1 Artist</div>
             </div>
@@ -340,13 +340,13 @@ export class ProfileView {
 
     // Fill with gradient
     const grad = ctx.createRadialGradient(cx, cy, 0, cx, cy, maxR);
-    grad.addColorStop(0, 'rgba(139, 92, 246, 0.35)');
-    grad.addColorStop(1, 'rgba(59, 130, 246, 0.15)');
+    grad.addColorStop(0, 'rgba(61, 139, 255, 0.30)');
+    grad.addColorStop(1, 'rgba(99, 102, 241, 0.12)');
     ctx.fillStyle = grad;
     ctx.fill();
 
     // Stroke
-    ctx.strokeStyle = 'rgba(139, 92, 246, 0.7)';
+    ctx.strokeStyle = 'rgba(61, 139, 255, 0.7)';
     ctx.lineWidth = 2;
     ctx.stroke();
 
@@ -360,7 +360,7 @@ export class ProfileView {
       
       ctx.beginPath();
       ctx.arc(x, y, 4, 0, Math.PI * 2);
-      ctx.fillStyle = 'rgba(139, 92, 246, 0.9)';
+      ctx.fillStyle = 'rgba(61, 139, 255, 0.9)';
       ctx.fill();
       ctx.strokeStyle = 'rgba(255,255,255,0.3)';
       ctx.lineWidth = 1.5;

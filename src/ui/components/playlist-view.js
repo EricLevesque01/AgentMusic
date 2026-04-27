@@ -1,6 +1,7 @@
 /**
- * TasteGraph — Playlist View Component
- * Renders the scored playlist with explanations, score breakdowns, and feedback buttons.
+ * TasteGraph — Playlist View Component (v2 — Deep Space Pro)
+ * Pro-tool track list with always-visible metric bars and
+ * right-panel Node Inspector integration.
  */
 
 export class PlaylistView {
@@ -20,155 +21,236 @@ export class PlaylistView {
     }
 
     this.container.innerHTML = `
-      <div id="playlist-wrap" style="animation: fadeInUp 400ms ease forwards;">
-        <div class="glass-card" style="padding: var(--space-5); margin-bottom: var(--space-6); border-left: 3px solid var(--accent-primary);">
-          <div style="display: flex; justify-content: space-between; align-items: flex-start;">
-            <div>
-              <div style="font-size: var(--font-size-sm); color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.08em; margin-bottom: var(--space-2); font-weight: var(--font-weight-semibold);">Playlist Summary</div>
-              <p style="color: var(--text-primary); font-style: italic;">${explanations.playlistSummary}</p>
-            </div>
-            <button id="btn-save-spotify" class="btn" style="background: #1DB954; color: black; border-color: #1DB954; flex-shrink: 0; margin-left: var(--space-4);">
-              Save to Spotify
-            </button>
+      <div id="playlist-wrap" style="animation: fadeInUp 350ms ease forwards;">
+
+        <!-- Summary bar -->
+        <div class="pro-panel" style="padding:var(--space-4) var(--space-5);
+             margin-bottom:var(--space-4);display:flex;justify-content:space-between;align-items:center;gap:var(--space-4);">
+          <div style="flex:1;">
+            <div class="section-label" style="margin-bottom:var(--space-1);">Playlist Summary</div>
+            <p style="color:var(--text-secondary);font-size:var(--font-size-sm);
+                      font-style:italic;">${explanations.playlistSummary}</p>
           </div>
+          <button id="btn-save-spotify" class="btn btn-sm"
+                  style="background:#1DB954;color:#000;border-color:#1DB954;flex-shrink:0;font-weight:700;">
+            Save to Spotify
+          </button>
         </div>
 
-        <div style="display: flex; flex-direction: column; gap: var(--space-3);">
+        <!-- Track list -->
+        <div style="display:flex;flex-direction:column;gap:var(--space-2);">
           ${scoredPlaylist.map((c, i) => this._renderTrack(c, i, explanations)).join('')}
         </div>
       </div>
     `;
 
-    // Attach Save to Spotify listener
+    // Save to Spotify
     const saveBtn = document.getElementById('btn-save-spotify');
     if (saveBtn) {
       saveBtn.addEventListener('click', async () => {
         saveBtn.disabled = true;
-        saveBtn.innerText = 'Saving...';
-        
+        saveBtn.innerText = 'Saving…';
         try {
           const { isAuthenticated, redirectToSpotifyLogin } = await import('../../auth/spotify-auth.js');
-          if (!isAuthenticated()) {
-            saveBtn.innerText = 'Redirecting to Spotify...';
-            await redirectToSpotifyLogin();
-            return;
-          }
-
+          if (!isAuthenticated()) { await redirectToSpotifyLogin(); return; }
           const { getCurrentUser, createPlaylist, addTracksToPlaylist } = await import('../../data/spotify-api.js');
-          
           const user = await getCurrentUser();
           const uris = scoredPlaylist.map(c => `spotify:track:${c.track.id}`);
-          
-          const playlistName = `TasteGraph Agent: ${new Date().toLocaleDateString()}`;
-          const playlistDesc = `Curated by TasteGraph AI: ${explanations.playlistSummary}`;
-          
-          const newPlaylist = await createPlaylist(user.id, playlistName, playlistDesc);
-          await addTracksToPlaylist(newPlaylist.id, uris);
-          
-          saveBtn.innerText = 'Saved!';
-          saveBtn.style.background = 'var(--bg-tertiary)';
-          saveBtn.style.color = 'var(--text-primary)';
-          saveBtn.style.borderColor = 'var(--border-subtle)';
+          const pl = await createPlaylist(user.id, `TasteGraph: ${new Date().toLocaleDateString()}`, explanations.playlistSummary);
+          await addTracksToPlaylist(pl.id, uris);
+          saveBtn.innerText = 'Saved ✓';
+          saveBtn.style.cssText += ';background:var(--bg-tertiary);color:var(--text-primary);border-color:var(--border-subtle);';
         } catch (err) {
-          console.error("Failed to save playlist", err);
+          console.error('Save failed', err);
           saveBtn.innerText = 'Error';
           saveBtn.disabled = false;
         }
       });
     }
 
-    // Attach expand listeners
-    scoredPlaylist.forEach((c, i) => {
-      const card = document.getElementById(`track-card-${i}`);
-      const details = document.getElementById(`track-details-${i}`);
-      if (card && details) {
-        card.addEventListener('click', () => {
-          const isOpen = details.style.display !== 'none';
-          details.style.display = isOpen ? 'none' : 'block';
-        });
-      }
-    });
+    // Wire inspector panel
+    this._wireInspector(scoredPlaylist, explanations);
   }
 
   _renderTrack(candidate, index, explanations) {
-    const { track, artistName, dominantFactor, finalScore, breakdown, source, hopDistance } = candidate;
-    const explanation = explanations.trackExplanations.get(track.id) || '';
+    const { track, artistName, dominantFactor, finalScore, breakdown, hopDistance } = candidate;
     const albumImg = track.album?.images?.[0]?.url;
 
     const factorColors = {
       elo:     'var(--accent-primary)',
-      graph:   'var(--accent-secondary)',
+      graph:   'var(--accent-cyan)',
       audio:   'var(--accent-amber)',
-      session: 'var(--accent-pink)',
+      session: 'var(--accent-green)',
     };
-    const factorEmoji = { elo: '⭐', graph: '🕸️', audio: '🎵', session: '🎯' };
+    const factorLabels = { elo: 'Taste', graph: 'Graph', audio: 'Audio', session: 'Session' };
     const factorColor = factorColors[dominantFactor] || 'var(--accent-primary)';
 
     const scorePercent = Math.round(finalScore * 100);
-    const eloW   = Math.round(breakdown.eloComponent * 100);
-    const graphW = Math.round(breakdown.graphComponent * 100);
-    const audioW = Math.round(breakdown.audioComponent * 100);
-    const sessW  = Math.round(breakdown.sessionComponent * 100);
+    const eloW   = Math.round((breakdown.eloComponent   || 0) * 100);
+    const graphW = Math.round((breakdown.graphComponent  || 0) * 100);
+    const audioW = Math.round((breakdown.audioComponent  || 0) * 100);
+    const sessW  = Math.round((breakdown.sessionComponent|| 0) * 100);
+    const hopLabel = ['Direct', 'Hop ×1', 'Hop ×2'][hopDistance] ?? '—';
 
-    const hopLabel = hopDistance === 0 ? 'Your artist'
-      : hopDistance === 1 ? '1 hop away'
-      : '2 hops away';
+    const metrics = [
+      { label: 'Taste',   value: eloW,   color: 'var(--accent-primary)' },
+      { label: 'Graph',   value: graphW, color: 'var(--accent-cyan)' },
+      { label: 'Audio',   value: audioW, color: 'var(--accent-amber)' },
+      { label: 'Session', value: sessW,  color: 'var(--accent-green)' },
+    ];
 
     return `
-      <div class="glass-card" id="track-card-${index}" style="padding: var(--space-4); cursor: pointer; transition: all var(--transition-base);"
-           onmouseover="this.style.borderColor='${factorColor}'" onmouseout="this.style.borderColor='var(--border-glass)'">
-        <div style="display: flex; align-items: center; gap: var(--space-4);">
-          <!-- Index -->
-          <div style="width: 28px; text-align: center; font-size: var(--font-size-sm); color: var(--text-muted); font-weight: var(--font-weight-bold); flex-shrink: 0;">
+      <div class="glass-card" id="track-card-${index}"
+           style="padding:var(--space-3) var(--space-4);cursor:pointer;
+                  border-left:2px solid transparent;
+                  transition:border-color var(--transition-fast),background var(--transition-fast);"
+           data-track-index="${index}"
+           onmouseover="this.style.borderLeftColor='${factorColor}';this.style.background='var(--bg-card-hover)';"
+           onmouseout="this.style.borderLeftColor='transparent';this.style.background='';">
+
+        <!-- Top row -->
+        <div style="display:flex;align-items:center;gap:var(--space-3);">
+          <div style="width:22px;text-align:center;font-size:var(--font-size-xs);
+                      color:var(--text-muted);font-variant-numeric:tabular-nums;flex-shrink:0;">
             ${index + 1}
           </div>
 
-          <!-- Album Art -->
-          <div style="width: 52px; height: 52px; border-radius: var(--radius-md); overflow: hidden; background: var(--bg-tertiary); flex-shrink: 0;">
+          <div style="width:44px;height:44px;border-radius:var(--radius-md);
+                      overflow:hidden;background:var(--bg-tertiary);flex-shrink:0;">
             ${albumImg
               ? `<img src="${albumImg}" alt="" style="width:100%;height:100%;object-fit:cover;">`
-              : `<div style="width:100%;height:100%;display:flex;align-items:center;justify-content:center;font-size:1.5rem;">🎵</div>`
+              : `<div style="width:100%;height:100%;display:flex;align-items:center;justify-content:center;color:var(--text-muted);font-size:18px;">♪</div>`
             }
           </div>
 
-          <!-- Track Info -->
-          <div style="flex: 1; min-width: 0;">
-            <div style="font-weight: var(--font-weight-semibold); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">${track.name}</div>
-            <div style="font-size: var(--font-size-sm); color: var(--text-secondary);">${artistName}</div>
+          <div style="flex:1;min-width:0;">
+            <div style="font-weight:var(--font-weight-semibold);font-size:var(--font-size-sm);
+                        white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:var(--text-bright);">${track.name}</div>
+            <div style="font-size:var(--font-size-xs);color:var(--text-secondary);margin-top:1px;">${artistName}</div>
           </div>
 
-          <!-- Dominant Factor Badge -->
-          <div style="display: flex; flex-direction: column; align-items: flex-end; gap: 4px; flex-shrink: 0;">
-            <span class="badge" style="background: ${factorColor}22; color: ${factorColor}; border-color: ${factorColor}44; font-size: 11px;">
-              ${factorEmoji[dominantFactor]} ${dominantFactor}
+          <div style="display:flex;flex-direction:column;align-items:flex-end;gap:3px;flex-shrink:0;">
+            <span class="badge" style="background:${factorColor}18;color:${factorColor};border-color:${factorColor}30;">
+              ${factorLabels[dominantFactor] || dominantFactor}
             </span>
-            <span style="font-size: 10px; color: var(--text-muted);">${hopLabel}</span>
+            <span class="badge">${hopLabel}</span>
           </div>
         </div>
 
-        <!-- Expandable details -->
-        <div id="track-details-${index}" style="display: none; margin-top: var(--space-4); padding-top: var(--space-4); border-top: 1px solid var(--border-subtle);">
-          <!-- Explanation -->
-          <p style="font-size: var(--font-size-sm); color: var(--text-secondary); margin-bottom: var(--space-3); font-style: italic;">
-            💬 ${explanation}
-          </p>
-
-          <!-- Score breakdown bar -->
-          <div style="margin-bottom: var(--space-2);">
-            <div style="font-size: 11px; color: var(--text-muted); margin-bottom: 6px;">Score breakdown (${scorePercent}%)</div>
-            <div style="display: flex; height: 8px; border-radius: 4px; overflow: hidden; gap: 2px;">
-              <div style="width: ${eloW}%; background: var(--accent-primary); border-radius: 4px;"></div>
-              <div style="width: ${graphW}%; background: var(--accent-secondary); border-radius: 4px;"></div>
-              <div style="width: ${audioW}%; background: var(--accent-amber); border-radius: 4px;"></div>
-              <div style="width: ${sessW}%; background: var(--accent-pink); border-radius: 4px;"></div>
-            </div>
-            <div style="display: flex; gap: var(--space-3); margin-top: 6px; flex-wrap: wrap;">
-              ${[['⭐ Taste', eloW, 'var(--accent-primary)'], ['🕸️ Graph', graphW, 'var(--accent-secondary)'],
-                 ['🎵 Audio', audioW, 'var(--accent-amber)'], ['🎯 Session', sessW, 'var(--accent-pink)']
-                ].map(([l, v, c]) => `<span style="font-size:10px;color:${c};">${l}: ${v}%</span>`).join('')}
-            </div>
+        <!-- Always-visible metric bars -->
+        <div style="margin-top:var(--space-3);padding-top:var(--space-3);border-top:1px solid var(--border-subtle);">
+          <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:var(--space-2);">
+            ${metrics.map(m => `
+              <div>
+                <div style="display:flex;justify-content:space-between;margin-bottom:3px;">
+                  <span style="font-size:var(--font-size-2xs);color:var(--text-muted);
+                               text-transform:uppercase;letter-spacing:0.05em;">${m.label}</span>
+                  <span style="font-size:var(--font-size-2xs);color:${m.color};
+                               font-variant-numeric:tabular-nums;">${m.value}%</span>
+                </div>
+                <div class="metric-bar-track">
+                  <div class="metric-bar-fill" style="width:${m.value}%;background:${m.color};"></div>
+                </div>
+              </div>
+            `).join('')}
           </div>
         </div>
+      </div>
+    `;
+  }
+
+  _wireInspector(scoredPlaylist, explanations) {
+    scoredPlaylist.forEach((c, i) => {
+      const card = document.getElementById(`track-card-${i}`);
+      if (!card) return;
+      card.addEventListener('click', () => this._showInspector(c, explanations));
+    });
+  }
+
+  _showInspector(candidate, explanations) {
+    const inspector = document.getElementById('inspector-content');
+    if (!inspector) return;
+    document.body.classList.add('inspector-open');
+
+    const { track, artistName, dominantFactor, finalScore, breakdown, hopDistance, tags } = candidate;
+    const explanation = explanations.trackExplanations.get(track.id) || 'No explanation available.';
+    const albumImg = track.album?.images?.[0]?.url;
+    const scorePercent = Math.round(finalScore * 100);
+    const hopLabel = ['Direct', 'Hop ×1', 'Hop ×2'][hopDistance] ?? '—';
+
+    const metrics = [
+      { label: 'Taste Match',    value: Math.round((breakdown.eloComponent   || 0) * 100), color: 'var(--accent-primary)' },
+      { label: 'Graph Distance', value: Math.round((breakdown.graphComponent  || 0) * 100), color: 'var(--accent-cyan)' },
+      { label: 'Audio Profile',  value: Math.round((breakdown.audioComponent  || 0) * 100), color: 'var(--accent-amber)' },
+      { label: 'Session Match',  value: Math.round((breakdown.sessionComponent|| 0) * 100), color: 'var(--accent-green)' },
+    ];
+
+    const topTags = (tags || []).slice(0, 6).map(t => t.name || t).filter(Boolean);
+
+    inspector.innerHTML = `
+      <div style="position:relative;background:var(--bg-tertiary);">
+        ${albumImg
+          ? `<img src="${albumImg}" style="width:100%;aspect-ratio:1;object-fit:cover;display:block;opacity:0.65;">`
+          : `<div style="width:100%;aspect-ratio:1;display:flex;align-items:center;justify-content:center;color:var(--text-muted);font-size:48px;">♪</div>`
+        }
+        <div style="position:absolute;bottom:0;left:0;right:0;
+                    padding:var(--space-3) var(--space-4);
+                    background:linear-gradient(transparent,rgba(6,13,26,0.96));">
+          <div style="font-weight:var(--font-weight-bold);color:var(--text-bright);
+                      font-size:var(--font-size-sm);">${track.name}</div>
+          <div style="font-size:var(--font-size-xs);color:var(--text-secondary);">${artistName}</div>
+        </div>
+      </div>
+
+      <div class="inspector-section">
+        <div class="inspector-metric">
+          <span class="inspector-metric-label">Relevance Score</span>
+          <span class="inspector-metric-value" style="font-size:var(--font-size-lg);">${scorePercent}%</span>
+        </div>
+        <div class="metric-bar-track" style="height:4px;">
+          <div class="metric-bar-fill"
+               style="width:${scorePercent}%;background:linear-gradient(90deg,var(--accent-primary),var(--accent-indigo));"></div>
+        </div>
+      </div>
+
+      <div class="inspector-section">
+        <div class="inspector-title" style="margin-bottom:var(--space-3);">Signal Breakdown</div>
+        ${metrics.map(m => `
+          <div class="inspector-metric">
+            <span class="inspector-metric-label">${m.label}</span>
+            <span class="inspector-metric-value" style="color:${m.color};">${m.value}%</span>
+          </div>
+          <div class="metric-bar-track" style="margin-bottom:var(--space-3);">
+            <div class="metric-bar-fill" style="width:${m.value}%;background:${m.color};"></div>
+          </div>
+        `).join('')}
+      </div>
+
+      <div class="inspector-section">
+        <div class="inspector-title" style="margin-bottom:var(--space-3);">Discovery Path</div>
+        <div class="inspector-metric">
+          <span class="inspector-metric-label">Graph Distance</span>
+          <span class="badge badge-blue">${hopLabel}</span>
+        </div>
+        <div class="inspector-metric" style="margin-top:var(--space-2);">
+          <span class="inspector-metric-label">Primary Signal</span>
+          <span class="badge badge-blue">${dominantFactor}</span>
+        </div>
+      </div>
+
+      ${topTags.length > 0 ? `
+        <div class="inspector-section">
+          <div class="inspector-title" style="margin-bottom:var(--space-3);">Tags</div>
+          <div style="display:flex;flex-wrap:wrap;gap:var(--space-2);">
+            ${topTags.map(t => `<span class="badge">${t}</span>`).join('')}
+          </div>
+        </div>
+      ` : ''}
+
+      <div class="inspector-section">
+        <div class="inspector-title" style="margin-bottom:var(--space-3);">Agent Rationale</div>
+        <p style="font-size:var(--font-size-xs);color:var(--text-secondary);
+                  line-height:1.65;font-style:italic;">${explanation}</p>
       </div>
     `;
   }

@@ -38,10 +38,12 @@ function getCurrentRoute() {
 function navigate() {
   if (!isAuthenticated()) {
     renderLoginScreen(pageContainer);
-    if (navElement) navElement.classList.add('hidden');
+    document.getElementById('sidebar')?.classList.add('hidden');
+    document.getElementById('inspector-panel')?.classList.add('hidden');
     return;
   }
-  if (navElement) navElement.classList.remove('hidden');
+  document.getElementById('sidebar')?.classList.remove('hidden');
+  document.getElementById('inspector-panel')?.classList.remove('hidden');
 
   const route = getCurrentRoute();
   const renderFn = routes[route];
@@ -60,14 +62,39 @@ window.tastegraphLogout = function () {
 async function init() {
   const app = document.getElementById('app');
 
-  // Create page container
+  // Mount sidebar + bottom nav (createNavBar returns a DocumentFragment)
+  const navFrag = createNavBar();
+  app.appendChild(navFrag);
+  navElement = document.getElementById('sidebar');
+
+  // Create center page container
   pageContainer = document.createElement('main');
   pageContainer.id = 'page-container';
   app.appendChild(pageContainer);
 
-  // Create and append bottom nav
-  navElement = createNavBar();
-  app.appendChild(navElement);
+  // Create right inspector panel shell
+  const inspector = document.createElement('aside');
+  inspector.id = 'inspector-panel';
+  inspector.innerHTML = `
+    <div class="inspector-header">
+      <span class="inspector-title">Node Inspector</span>
+      <button class="btn btn-ghost btn-icon" id="inspector-close" aria-label="Close inspector">
+        <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.5">
+          <path d="M1 1l10 10M11 1L1 11"/>
+        </svg>
+      </button>
+    </div>
+    <div id="inspector-content" style="flex:1;overflow-y:auto;">
+      <div class="inspector-section" style="color:var(--text-muted);font-size:var(--font-size-xs);text-align:center;padding-top:var(--space-8);">
+        Select a track to inspect
+      </div>
+    </div>
+  `;
+  app.appendChild(inspector);
+
+  inspector.querySelector('#inspector-close')?.addEventListener('click', () => {
+    document.body.classList.remove('inspector-open');
+  });
 
   // Handle OAuth callback
   if (window.location.search.includes('code=')) {

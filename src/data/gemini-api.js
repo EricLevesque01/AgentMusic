@@ -7,17 +7,23 @@
  */
 
 const GEMINI_API_KEY = 'AIzaSyDpa2Gq6KeFiUUxO2a_zNctLMZlA9HnyuU';
-const GEMINI_MODEL   = 'gemini-2.0-flash';
-const GEMINI_URL     = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${GEMINI_API_KEY}`;
+const MODELS = {
+  fast: 'gemini-2.0-flash',
+  reasoning: 'gemini-1.5-pro'
+};
 
 /**
  * Send a chat message to Gemini with optional function declarations.
  * @param {string}   systemPrompt
  * @param {Array}    messages          - { role: 'user'|'model', parts: [{text}] }[]
  * @param {Array}    toolDeclarations  - Gemini function declarations
+ * @param {string}   modelTier         - 'fast' (default) or 'reasoning'
  * @returns {{ functionCalls, textReply }}
  */
-export async function callWithTools(systemPrompt, messages, toolDeclarations = []) {
+export async function callWithTools(systemPrompt, messages, toolDeclarations = [], modelTier = 'fast') {
+  const modelName = MODELS[modelTier] || MODELS.fast;
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${GEMINI_API_KEY}`;
+
   const body = {
     system_instruction: { parts: [{ text: systemPrompt }] },
     contents: messages,
@@ -30,7 +36,7 @@ export async function callWithTools(systemPrompt, messages, toolDeclarations = [
     },
   };
 
-  const response = await fetch(GEMINI_URL, {
+  const response = await fetch(url, {
     method:  'POST',
     headers: { 'Content-Type': 'application/json' },
     body:    JSON.stringify(body),

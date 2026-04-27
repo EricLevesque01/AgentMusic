@@ -174,7 +174,7 @@ CRITICAL RULES:
 6. Do not use markdown, just write the plain text paragraphs.`;
 
     try {
-      const result = await callWithTools(prompt, [{ role: 'user', parts: [{text: 'Analyze my taste identity.'}] }]);
+      const result = await callWithTools(prompt, [{ role: 'user', parts: [{text: 'Analyze my taste identity.'}] }], [], 'reasoning');
       if (result.textReply) {
         return result.textReply.trim();
       }

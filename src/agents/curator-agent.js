@@ -142,7 +142,7 @@ CRITICAL RULES:
     while (!finished && loopCount < MAX_LOOPS && playlist.length < MAX_TRACKS) {
       loopCount++;
       try {
-        const { functionCalls, textReply } = await callWithTools(systemPrompt, messages, tools);
+        const { functionCalls, textReply } = await callWithTools(systemPrompt, messages, tools, 'reasoning');
         
         if (textReply) {
           messages.push({ role: 'model', parts: [{ text: textReply }] });

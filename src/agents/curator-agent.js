@@ -67,7 +67,7 @@ CULTURAL CONTEXT (from Wikipedia):
 ${wikiText || 'No deep context available — use MusicBrainz to research artists.'}
 
 YOUR RESEARCH STRATEGY (follow this step by step):
-0. You MUST start by calling the `think_and_plan` tool to analyze the user's INTENT against their TASTE PROFILE. Determine if their intent requires out-of-domain exploration.
+0. You MUST start by calling the think_and_plan tool to analyze the user's INTENT against their TASTE PROFILE. Determine if their intent requires out-of-domain exploration.
 1. If the requested task/vibe (e.g., "Jazz", "Classical") does NOT match the user's known top artists, you are STRICTLY FORBIDDEN from starting with their top artists. You MUST use search_spotify_artists (e.g. query: "genre:jazz") to find completely new seed artists.
 2. If the task aligns with their taste, START from 2-3 of their favorite artists as "seed" anchors.
 3. Use get_similar_artists on your seeds to branch out.

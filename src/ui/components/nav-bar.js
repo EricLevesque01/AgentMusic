@@ -60,18 +60,16 @@ export function createNavBar() {
       `).join('')}
     </nav>
 
-    <div class="sidebar-section-label">System</div>
-    <button class="nav-item" onclick="window.tastegraphLogout && window.tastegraphLogout()" aria-label="Sign out">
-      <span class="nav-icon-svg">
-        <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
-          <path d="M6 2H3a1 1 0 00-1 1v10a1 1 0 001 1h3M10 11l3-3-3-3M13 8H6"/>
-        </svg>
-      </span>
-      <span>Sign Out</span>
-    </button>
-
-    <div class="sidebar-footer">
-      <div style="font-size: var(--font-size-2xs); color: var(--text-muted); display: flex; align-items: center;">
+    <div class="sidebar-footer" style="display:flex; flex-direction: column; gap: var(--space-2);">
+      <button class="nav-item" onclick="window.tastegraphLogout && window.tastegraphLogout()" aria-label="Sign out" style="padding: var(--space-2) var(--space-3); color: var(--text-muted); font-size: var(--font-size-xs);">
+        <span class="nav-icon-svg" style="width: 14px; height: 14px; margin-right: 8px;">
+          <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M6 2H3a1 1 0 00-1 1v10a1 1 0 001 1h3M10 11l3-3-3-3M13 8H6"/>
+          </svg>
+        </span>
+        <span>Sign Out</span>
+      </button>
+      <div style="font-size: var(--font-size-2xs); color: var(--text-muted); display: flex; align-items: center; padding: 0 var(--space-3);">
         <span class="sidebar-status-dot"></span>
         Pipeline Ready
       </div>

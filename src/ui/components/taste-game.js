@@ -892,44 +892,32 @@ export class TasteGame {
 
 
       <!-- Stats bar -->
-      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: var(--space-6); padding: var(--space-3) var(--space-4); background: var(--bg-card); border-radius: var(--radius-md);">
-        <div>
-          <span style="color: var(--text-muted); font-size: var(--font-size-sm); text-transform: uppercase; letter-spacing: 0.05em;">Round </span>
-          <span style="font-weight: var(--font-weight-bold); color: var(--text-primary); font-size: var(--font-size-lg);">${this.roundsPlayed}</span>
-        </div>
-        <div style="color: var(--text-muted); font-size: var(--font-size-sm);">
-          ${this.allArtists.length} artists mapped
-        </div>
+      <div style="display: flex; justify-content: space-between; align-items: center;
+                  margin-bottom: var(--space-5); padding: var(--space-2) var(--space-4);
+                  background: var(--bg-card); border-radius: var(--radius-md); border: 1px solid var(--border-subtle);">
+        <span style="color: var(--text-muted); font-size: var(--font-size-xs);
+                     text-transform: uppercase; letter-spacing: 0.08em;">Round ${this.roundsPlayed}</span>
+        <span style="color: var(--text-muted); font-size: var(--font-size-xs);">${this.allArtists.length} artists mapped</span>
       </div>
 
       <!-- Match cards -->
       <div style="display: flex; gap: var(--space-8); justify-content: center; flex-wrap: wrap; align-items: stretch; margin-bottom: var(--space-6);">
-        ${this._renderCard(A, imgA, A.isConciergePick ? '⚔️ Contender' : null)}
-        ${this._renderCard(B, imgB, B.isConciergePick ? '⚔️ Contender' : null)}
+        ${this._renderCard(A, imgA, A.isConciergePick ? 'Contender' : null)}
+        ${this._renderCard(B, imgB, B.isConciergePick ? 'Contender' : null)}
       </div>
 
       <!-- Controls -->
-      <div style="display: flex; gap: var(--space-3); justify-content: center; align-items: center; margin-top: var(--space-6); flex-wrap: wrap;">
-        ${this.history.length > 0 ? `<button class="btn btn-ghost" id="undo-btn" style="font-size: var(--font-size-sm);" aria-label="Undo previous choice">↩️ Undo</button>` : ''}
-        <button class="btn btn-ghost" id="skip-btn" style="font-size: var(--font-size-sm);">Skip this pair</button>
-        ${showFinish ? `<button class="btn btn-secondary" id="finish-btn">✅ Finish &amp; See Results</button>` : ''}
+      <div style="display: flex; gap: var(--space-3); justify-content: center; align-items: center; margin-top: var(--space-4); flex-wrap: wrap;">
+        ${this.history.length > 0 ? `<button class="btn btn-ghost btn-sm" id="undo-btn" aria-label="Undo previous choice">↩ Undo</button>` : ''}
+        <button class="btn btn-ghost btn-sm" id="skip-btn">Skip</button>
+        ${showFinish ? `<button class="btn btn-secondary" id="finish-btn">Finish Session</button>` : ''}
       </div>
-
-      ${showFinish ? `
-        <p style="text-align: center; color: var(--text-muted); font-size: var(--font-size-xs); margin-top: var(--space-2);">
-          Or keep playing — the more you vote, the better your playlist!
-        </p>
-      ` : `
-        <p style="text-align: center; color: var(--text-muted); font-size: var(--font-size-xs); margin-top: var(--space-2);">
-          Play as many rounds as you like. "Finish" appears after ${MIN_ROUNDS_TO_FINISH} rounds.
-        </p>
-      `}
 
       <!-- Calibration Search -->
       <div style="margin-top: var(--space-6); padding-top: var(--space-4); border-top: 1px solid var(--border-subtle); display: flex; flex-direction: column; align-items: center;">
-        <p style="font-size: var(--font-size-sm); color: var(--text-secondary); margin-bottom: var(--space-2);">Want to calibrate a specific artist?</p>
+        <p style="font-size: var(--font-size-xs); color: var(--text-muted); margin-bottom: var(--space-2);">Calibrate a specific artist</p>
         <div style="position: relative; width: 100%; max-width: 300px;">
-          <input type="text" id="calibrate-search" placeholder="Search artist..." style="width: 100%; padding: 8px 16px; border-radius: var(--radius-full); border: 1px solid var(--border-glass); background: var(--bg-card); color: var(--text-primary); outline: none;" autocomplete="off">
+          <input type="text" id="calibrate-search" placeholder="Search artist…" style="width: 100%; padding: 8px 16px; border-radius: var(--radius-full); border: 1px solid var(--border-glass); background: var(--bg-card); color: var(--text-primary); outline: none; font-size: var(--font-size-sm);" autocomplete="off">
           <ul id="calibrate-dropdown" style="display: none; position: absolute; bottom: 100%; left: 0; right: 0; margin-bottom: 8px; background: var(--bg-secondary); border: 1px solid var(--border-glass); border-radius: var(--radius-md); max-height: 200px; overflow-y: auto; list-style: none; padding: 0; z-index: 100; box-shadow: var(--shadow-lg);"></ul>
         </div>
       </div>
@@ -1106,10 +1094,10 @@ export class TasteGame {
             ${a.imageUrl ? `<img src="${a.imageUrl}" style="width:40px;height:40px;border-radius:50%;object-fit:cover;">` : ''}
             <div>
               <span style="font-weight:var(--font-weight-medium);">${a.name}</span>
-              ${isNew ? `<span class="badge" style="margin-left:6px;font-size:10px;background:var(--accent-secondary)22;color:var(--accent-secondary);">New discovery</span>` : ''}
+              ${isNew ? `<span class="badge badge-green" style="margin-left:6px;">Discovery</span>` : ''}
             </div>
           </div>
-          <span class="badge badge-accent" style="font-size:11px;">${a.rating} Elo</span>
+          <span class="badge">${a.rating >= 1600 ? 'Elite' : a.rating >= 1530 ? 'Top tier' : a.rating >= 1500 ? 'Liked' : a.rating >= 1450 ? 'Mixed' : 'Disliked'}</span>
         </div>
       `;
     }).join('');

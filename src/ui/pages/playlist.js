@@ -9,9 +9,8 @@ import { PlaylistView } from '../components/playlist-view.js';
 export function renderPlaylistPage(container) {
   container.innerHTML = `
     <div class="page" id="page-playlist">
-      <header class="page-header text-center">
-        <h1 class="page-title">Curate</h1>
-        <p class="page-subtitle">Dial in your vibe</p>
+      <header class="page-header">
+        <h1 class="page-title">Generate Playlist</h1>
       </header>
 
       <div id="slider-container"></div>
@@ -20,7 +19,7 @@ export function renderPlaylistPage(container) {
 
       <div style="text-align: center; margin-top: var(--space-6);">
         <button class="btn btn-primary btn-lg" id="generate-btn" style="width: 100%; max-width: 300px;">
-          <span style="font-size: 1.25rem; margin-right: 8px;">✨</span> Generate Playlist
+          Generate Playlist
         </button>
       </div>
 

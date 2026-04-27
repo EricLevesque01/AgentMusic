@@ -86,7 +86,7 @@ async function init() {
     </div>
     <div id="inspector-content" style="flex:1;overflow-y:auto;">
       <div class="inspector-section" style="color:var(--text-muted);font-size:var(--font-size-xs);text-align:center;padding-top:var(--space-8);">
-        Select a track to inspect
+        Select a track to see what the agents are thinking
       </div>
     </div>
   `;

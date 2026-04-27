@@ -27,7 +27,7 @@ const NAV_ITEMS = [
     </svg>`,
   },
   {
-    id: 'profile', label: 'Taste ID', hash: '#/profile',
+    id: 'profile', label: 'Sonic Profile', hash: '#/profile',
     icon: `<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
       <circle cx="8" cy="5" r="3"/>
       <path d="M1 14c0-3.314 3.134-6 7-6s7 2.686 7 6"/>

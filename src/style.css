@@ -180,6 +180,11 @@ body {
   flex-direction: column;
   overflow-y: auto;
   transition: transform var(--transition-slow);
+  transform: translateX(100%);
+}
+
+body.inspector-open #inspector-panel {
+  transform: translateX(0);
 }
 
 /* With inspector: shrink center pane */

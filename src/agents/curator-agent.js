@@ -108,5 +108,4 @@ Return ONLY the JSON array, no markdown blocks.`;
     // Limit to max just in case
     return playlist.slice(0, MAX_TRACKS);
   }
-  }
 }

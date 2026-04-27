@@ -430,9 +430,9 @@ export class TasteGame {
     
     if (candidates.length === 0) return knownRanked[Math.floor(Math.random() * knownRanked.length)];
     
-    // Sort by absolute distance and take the top 7 closest
+    // Sort by absolute distance and take the top 15 closest
     candidates.sort((a, b) => a.diff - b.diff);
-    const poolSize = Math.min(7, candidates.length);
+    const poolSize = Math.min(15, candidates.length);
     const topCandidates = candidates.slice(0, poolSize);
     
     // Pick one randomly from the pool to keep the game fresh!
@@ -486,12 +486,18 @@ export class TasteGame {
         const clampedHigh = Math.min(high, rankedOpponents.length - 1);
         
         if (rankedOpponents.length > 0 && low <= clampedHigh) {
-          const rawMid = Math.floor((low + clampedHigh) / 2);
-          
-          // Add up to 15% noise to the binary search index to increase variety!
-          const windowSize = Math.max(0, Math.floor((clampedHigh - low) * 0.15));
-          const noise = Math.floor(Math.random() * (windowSize * 2 + 1)) - windowSize;
-          let mid = Math.max(low, Math.min(clampedHigh, rawMid + noise));
+          // Instead of strict binary search, pick randomly within the middle bounds
+          // to create much more variety in the benchmark opponents used.
+          const range = clampedHigh - low;
+          let mid;
+          if (range <= 2) {
+            mid = low + Math.floor(Math.random() * (range + 1));
+          } else {
+            const padding = Math.floor(range * 0.2);
+            const minIndex = low + padding;
+            const maxIndex = clampedHigh - padding;
+            mid = Math.floor(Math.random() * (maxIndex - minIndex + 1)) + minIndex;
+          }
           
           let opponent = rankedOpponents[mid];
           

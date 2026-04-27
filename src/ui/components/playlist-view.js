@@ -27,7 +27,7 @@ export class PlaylistView {
         <div class="pro-panel" style="padding:var(--space-4) var(--space-5);
              margin-bottom:var(--space-4);display:flex;justify-content:space-between;align-items:center;gap:var(--space-4);">
           <div style="flex:1;">
-            <div class="section-label" style="margin-bottom:var(--space-1);">Playlist Summary</div>
+            <div class="section-label" style="margin-bottom:var(--space-1); font-size:var(--font-size-lg); color:var(--text-primary);">${explanations?.playlistTitle || 'Generated Playlist'}</div>
             <p style="color:var(--text-secondary);font-size:var(--font-size-sm);
                       font-style:italic;">${explanations?.playlistSummary || 'Curated by the Agent Music pipeline based on your taste profile.'}</p>
           </div>
@@ -56,7 +56,7 @@ export class PlaylistView {
           const { getCurrentUser, createPlaylist, addTracksToPlaylist } = await import('../../data/spotify-api.js');
           const user = await getCurrentUser();
           const uris = scoredPlaylist.map(c => `spotify:track:${c.track.id}`);
-          const pl = await createPlaylist(user.id, `TasteGraph: ${new Date().toLocaleDateString()}`, explanations.playlistSummary);
+          const pl = await createPlaylist(user.id, explanations?.playlistTitle || `TasteGraph: ${new Date().toLocaleDateString()}`, explanations?.playlistSummary || '');
           await addTracksToPlaylist(pl.id, uris);
           saveBtn.innerText = 'Saved ✓';
           saveBtn.style.cssText += ';background:var(--bg-tertiary);color:var(--text-primary);border-color:var(--border-subtle);';

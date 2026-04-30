@@ -24,7 +24,7 @@ export class CuratorAgent {
     const intent = (sessionIntent || '').toLowerCase();
 
     // Artist deep-dive: "deep dive into Miles Davis", "all Radiohead", "only Beatles"
-    if (/deep.?dive.*into|all\s+\w|only\s+(by|from)|discography|catalog|everything by/i.test(intent)) {
+    if (/deep.?dive.*into|all\s+\w|only\s+\w|just\s+\w|discography|catalog|everything by/i.test(intent)) {
       return {
         intentType: 'artist_focus',
         targetTracks: '8-15',

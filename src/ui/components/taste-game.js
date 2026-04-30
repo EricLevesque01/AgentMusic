@@ -116,7 +116,13 @@ export class TasteGame {
     this.injectedQueue = []; // queue of LLM-injected artists
     this.calibrationTask = null; // Beli-style binary search state
     this.winStreaks    = {}; // Track hot streaks for dynamic expansion
-    this.sessionAppearances = {}; // track appearances to cooldown anchors
+    this.sessionAppearances = {}; // track appearances to cooldown contenders
+    this.anchorAppearances = {}; // separate tracker for anchor/opponent role (cap at MAX_ANCHOR_APPEARANCES)
+
+    // Configurable thresholds (not hardcoded magic numbers)
+    this.MAX_ANCHOR_APPEARANCES = 3; // max times an anchor can be used as opponent per session
+    this.EXPANSION_INTERVAL_WINNER = 5; // expand pool from winner every N rounds
+    this.EXPANSION_INTERVAL_TOP = 10;   // expand pool from top favorites every N rounds
 
     // Listen for LLM injections
     window.addEventListener('tastegraph:inject-artists', async (e) => {
@@ -173,6 +179,16 @@ export class TasteGame {
         if (found) resolvedAnchors.push(found);
       }
       this.knownArtists = resolvedAnchors;
+
+      // 2b. Merge Spotify listening data into known artists
+      // These are the user's ACTUAL library — they should be in the game pool from the start.
+      const knownIds = new Set(this.knownArtists.map(a => a.id));
+      for (const artist of this.spotifyArtists) {
+        if (artist?.id && !knownIds.has(artist.id)) {
+          knownIds.add(artist.id);
+          this.knownArtists.push(artist);
+        }
+      }
 
       // 3. Initial expansion based on intelligent anchors
       this.renderLoading('Discovering related artists...');
@@ -436,13 +452,17 @@ export class TasteGame {
   _getClosestAnchor(targetId, knownRanked, eloRatings) {
     const targetElo = eloRatings[targetId]?.rating || 1500;
     
-    // Calculate distance for all valid anchors
-    // KEY FIX: settled top-tier artists (Elo > 1650 AND settled) are blocked from anchoring
-    // against contenders that are far away. A #1 artist at 1800 tells us NOTHING when
-    // compared against a brand-new contender at 1500 — the result is predetermined.
+    // Calculate distance for all valid anchors, applying three filters:
+    // 1. Never re-use an already-played matchup
+    // 2. Block settled top-tier anchors from facing far-away contenders (uninformative)
+    // 3. Cap per-session anchor appearances to prevent the same artist every round
     const candidates = [];
     for (const anchor of knownRanked) {
       if (anchor.id === targetId || this._hasPlayed(targetId, anchor.id, eloRatings)) continue;
+      
+      // Cap: don't reuse the same anchor more than MAX_ANCHOR_APPEARANCES times per session
+      if ((this.anchorAppearances[anchor.id] || 0) >= this.MAX_ANCHOR_APPEARANCES) continue;
+      
       const anchorData = eloRatings[anchor.id];
       const anchorElo = anchorData?.rating || 1500;
       const diff = Math.abs(anchorElo - targetElo);
@@ -629,6 +649,8 @@ export class TasteGame {
          const anchor = this._getClosestAnchor(contender.id, knownRanked, eloRatings);
          
          if (anchor) {
+           // Track anchor appearances so we don't overuse the same benchmark
+           this.anchorAppearances[anchor.id] = (this.anchorAppearances[anchor.id] || 0) + 1;
            const pair = Math.random() > 0.5 ? { A: contender, B: anchor } : { A: anchor, B: contender };
            return { ...pair, strategy: 'benchmark', insight: '🎯 Calibrating against your established favorites.' };
          }
@@ -733,17 +755,15 @@ export class TasteGame {
       winCard.style.boxShadow  = 'var(--shadow-glow-strong)';
     }
 
-    // Dynamic Expansion: Constantly create new contenders based on preferences
-    if (this.roundsPlayed % 2 === 0) {
-      // Every 2 rounds: fetch similar artists based on the *winner* of the current round
-      // This makes the game highly responsive to what they are enjoying in the moment.
+    // Dynamic Expansion: Throttled to let existing pool calibrate before adding new artists
+    if (this.roundsPlayed % this.EXPANSION_INTERVAL_WINNER === 0) {
+      // Every N rounds: fetch similar artists based on the *winner* of the current round
       const winnerArtist = [this.pair.A, this.pair.B].find(a => a.id === winnerId);
       if (winnerArtist) {
         this._expandPool([winnerArtist], []).then(() => this._mergePools());
       }
-    } else if (this.roundsPlayed % 5 === 0) {
-      // Every 5 rounds: fetch new artists based on their overall Top 3 favorites
-      // This ensures we are always creating contenders based on their core preferences.
+    } else if (this.roundsPlayed % this.EXPANSION_INTERVAL_TOP === 0) {
+      // Every M rounds: fetch new artists based on their overall Top 3 favorites
       const topFavorites = this.profiler.getTopRankedArtists(3);
       if (topFavorites.length > 0) {
         this._expandPool(topFavorites, []).then(() => this._mergePools());

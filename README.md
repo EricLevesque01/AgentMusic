@@ -25,9 +25,17 @@ TasteGraph relies on several distinct modules and agents to orchestrate the user
    - **Premium Users**: Uses the official Spotify Web Playback SDK to play full-length tracks seamlessly in the background.
    - **Free Users**: Gracefully falls back to 30-second `preview_url` HTML5 audio elements.
 
-5. **Concierge Agent (Pending)**
-   - An LLM-powered (Gemini) "DJ" that can interact with the user via chat.
+5. **Concierge Agent**
+   - An LLM-powered (Gemini/Ollama) "DJ" that interacts with the user via chat.
    - Takes natural language inputs (e.g., "I want female-led dark synthpop") and dynamically *injects* new artist recommendations into the active Taste Game pool for forced evaluation.
+   - Parses intents into structured tool calls for the Orchestrator pipeline.
+
+6. **Multi-Agent Playlist Pipeline**
+   - **Scout**: LLM-guided retrieval plan → Last.fm graph expansion → Spotify lookup
+   - **Curator**: Adaptive intent analysis, per-artist caps, quality gates, post-selection verification
+   - **Narrator**: RAG-grounded explanations with Wikipedia enrichment
+   - **Session DJ**: Real-time skip/listen tracking for feedback loops
+   - **Reflection Agent**: Post-session learning → episodic memory → drift trends
 
 ## Current Progress Roadmap
 
@@ -38,12 +46,20 @@ TasteGraph relies on several distinct modules and agents to orchestrate the user
 - [x] **Phase 10**: Deep data ingestion (Followed, Saved, Recent tracks) to harden the "Known Artist" baseline.
 - [x] **Phase 11**: UI/UX overhaul (Premium Glassmorphism aesthetic, sleek components).
 - [x] **Phase 12**: Hybrid Web Playback SDK integration for seamless in-game audio.
-- [ ] **Phase 13**: **Concierge Agent** LLM integration and multi-agent artist injection.
-- [ ] **Phase 14**: "Rejected" state visualization & 3-strike Elo pruning rules.
-- [ ] **Phase 15**: Final playlist generation, sequencing, and Spotify export.
+- [x] **Phase 13**: Concierge Agent LLM integration and multi-agent artist injection.
+- [x] **Phase 14**: Settled artist detection, "Don't know this artist" action, Elo pruning rules.
+- [x] **Phase 15**: Adaptive playlist generation with intent-aware curation and Spotify export.
 
 ## Running Locally
 
 1. Install dependencies: `npm install`
-2. Start dev server: `npm run dev`
-3. Navigate to `http://127.0.0.1:5173/` (Do not use `localhost` due to Spotify OAuth constraints).
+2. Copy `.env.example` to `.env` and add your API keys
+3. Start dev server: `npm run dev`
+4. Navigate to `http://127.0.0.1:5173/` (Do not use `localhost` due to Spotify OAuth constraints)
+
+### Using Ollama (Local LLM — no API credits needed)
+
+1. Install Ollama: https://ollama.com
+2. Pull a model: `ollama pull llama3.1`
+3. Set `VITE_LLM_BACKEND=ollama` in your `.env` file
+4. Optionally set `VITE_OLLAMA_MODEL=llama3.1` (default)

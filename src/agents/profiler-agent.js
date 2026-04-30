@@ -133,6 +133,7 @@ export class ProfilerAgent {
     return {
       eloRatings,
       topRankedArtists: allRanked.slice(0, 50), // Exposed for UI Leaderboard rendering
+      totalRatedArtists: allRanked.length,
       tasteTiers,
       topGenres,
       artists,

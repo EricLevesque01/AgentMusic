@@ -167,12 +167,15 @@ describe('Orchestrator — handleConciergeAction', () => {
     await orch.generatePlaylist('user1', { discovery: 0.5 });
   });
 
-  it('should handle adjust_sliders legacy action by setting a generic sessionIntent and reranking', async () => {
+  it('should treat legacy adjust_sliders as unknown action', async () => {
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
     const result = await orch.handleConciergeAction({
       type: 'adjust_sliders',
       sliders: { discovery: 0.9 },
     });
-    expect(result.sessionIntent).toBe("User requested a slight vibe adjustment.");
+    expect(warnSpy).toHaveBeenCalledWith('Orchestrator: unknown Concierge action type', 'adjust_sliders');
+    expect(result).toBeDefined(); // Returns last context unchanged
+    warnSpy.mockRestore();
   });
 
   it('should handle create_playlist action', async () => {
@@ -262,10 +265,10 @@ describe('Orchestrator — context threading', () => {
 
     await orch.generatePlaylist('user1', {});
 
-    // Scout should have been called with 3 args: tasteState, sliders, context
+    // Scout should have been called with 4 args: tasteState, sliders, context, onThought
     expect(scoutSpy).toHaveBeenCalledTimes(1);
     const callArgs = scoutSpy.mock.calls[0];
-    expect(callArgs.length).toBe(3);
+    expect(callArgs.length).toBe(4);
     expect(callArgs[2]).toHaveProperty('tasteProfile');
     expect(callArgs[2]).toHaveProperty('settledAnchors');
   });
@@ -299,10 +302,10 @@ describe('Orchestrator — context threading', () => {
 
     await orch.generatePlaylist('user1', {});
 
-    // Narrator: scoredPlaylist, tasteState, sliders, context
+    // Narrator: scoredPlaylist, tasteState, sliders, context, onThought
     expect(narratorSpy).toHaveBeenCalledTimes(1);
     const callArgs = narratorSpy.mock.calls[0];
-    expect(callArgs.length).toBe(4);
+    expect(callArgs.length).toBe(5);
     expect(callArgs[3]).toHaveProperty('sessionSignals');
   });
 });

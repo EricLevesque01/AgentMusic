@@ -179,31 +179,7 @@ body.nav-hidden #chat-fab {
   display: none !important;
 }
 
-/* Right Inspector Panel */
-#inspector-panel {
-  width: var(--inspector-width);
-  min-height: 100vh;
-  background: var(--bg-secondary);
-  border-left: 1px solid var(--border-subtle);
-  position: fixed;
-  top: 0;
-  right: 0;
-  z-index: var(--z-sidebar);
-  display: flex;
-  flex-direction: column;
-  overflow-y: auto;
-  transition: transform var(--transition-slow);
-  transform: translateX(100%);
-}
-
-body.inspector-open #inspector-panel {
-  transform: translateX(0);
-}
-
-/* With inspector: shrink center pane */
-body.inspector-open #page-container {
-  margin-right: var(--inspector-width);
-}
+/* Inspector Panel CSS Removed */
 
 /* ============================================================
    SIDEBAR NAV
@@ -571,30 +547,7 @@ body.inspector-open #page-container {
   background: var(--accent-green);
 }
 
-/* ============================================================
-   INSPECTOR PANEL (Right pane)
-   ============================================================ */
-
-.inspector-header {
-  padding: var(--space-4) var(--space-5);
-  border-bottom: 1px solid var(--border-subtle);
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-}
-
-.inspector-title {
-  font-size: var(--font-size-xs);
-  font-weight: var(--font-weight-semibold);
-  letter-spacing: 0.1em;
-  text-transform: uppercase;
-  color: var(--text-muted);
-}
-
-.inspector-section {
-  padding: var(--space-4) var(--space-5);
-  border-bottom: 1px solid var(--border-subtle);
-}
+/* Inspector panel removed */
 
 .inspector-metric {
   display: flex;

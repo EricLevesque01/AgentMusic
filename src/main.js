@@ -39,11 +39,9 @@ function navigate() {
   if (!isAuthenticated()) {
     renderLoginScreen(pageContainer);
     document.getElementById('sidebar')?.classList.add('hidden');
-    document.getElementById('inspector-panel')?.classList.add('hidden');
     return;
   }
   document.getElementById('sidebar')?.classList.remove('hidden');
-  document.getElementById('inspector-panel')?.classList.remove('hidden');
 
   const route = getCurrentRoute();
   
@@ -80,29 +78,7 @@ async function init() {
   pageContainer.id = 'page-container';
   app.appendChild(pageContainer);
 
-  // Create right inspector panel shell
-  const inspector = document.createElement('aside');
-  inspector.id = 'inspector-panel';
-  inspector.innerHTML = `
-    <div class="inspector-header">
-      <span class="inspector-title">Node Inspector</span>
-      <button class="btn btn-ghost btn-icon" id="inspector-close" aria-label="Close inspector">
-        <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.5">
-          <path d="M1 1l10 10M11 1L1 11"/>
-        </svg>
-      </button>
-    </div>
-    <div id="inspector-content" style="flex:1;overflow-y:auto;">
-      <div class="inspector-section" style="color:var(--text-muted);font-size:var(--font-size-xs);text-align:center;padding-top:var(--space-8);">
-        Select a track to see what the agents are thinking
-      </div>
-    </div>
-  `;
-  app.appendChild(inspector);
-
-  inspector.querySelector('#inspector-close')?.addEventListener('click', () => {
-    document.body.classList.remove('inspector-open');
-  });
+  // Inspector panel removed per user feedback.
 
   // Handle OAuth callback
   if (window.location.search.includes('code=')) {
@@ -162,7 +138,16 @@ async function init() {
     // Stop any playing audio globally on navigation
     document.querySelectorAll('audio').forEach(a => { a.pause(); a.currentTime = 0; });
     try { if (window.pauseTrack) window.pauseTrack(); } catch(e) {}
+
+    // Trigger Reflection Agent if we have session data (async, fire-and-forget)
+    _triggerEndSession();
+
     navigate();
+  });
+
+  // Trigger reflection on tab close / page unload
+  window.addEventListener('beforeunload', () => {
+    _triggerEndSession();
   });
 
   // Set up memory extraction event
@@ -240,6 +225,38 @@ function showDJModal(adjustments, orchestrator) {
   });
 
   document.body.appendChild(modal);
+}
+
+/**
+ * Collect Session DJ data and trigger the Reflection Agent (fire-and-forget).
+ * Called on navigation and page unload.
+ */
+function _triggerEndSession() {
+  try {
+    const dj = window.TG?.dj;
+    const orchestrator = window.TG?.orchestrator;
+    if (!dj || !orchestrator) return;
+
+    // Only reflect if there's meaningful data
+    const hasData = dj.skipHistory.length > 0 || dj.listenHistory.length > 0;
+    if (!hasData) return;
+
+    const sessionData = {
+      skipHistory: [...dj.skipHistory],
+      listenHistory: [...dj.listenHistory],
+      adjustments: { ...dj.adjustments },
+    };
+
+    // Reset DJ for next session
+    dj.reset();
+
+    // Fire-and-forget — don't await, don't block navigation
+    orchestrator.endSession(sessionData).catch(e =>
+      console.warn('Reflection failed:', e.message)
+    );
+  } catch (e) {
+    // Never block navigation
+  }
 }
 
 init();

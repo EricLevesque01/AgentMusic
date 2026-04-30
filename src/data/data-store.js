@@ -184,15 +184,32 @@ export class DataStore {
 
   // --- Saved Playlists ---
   static getSavedPlaylists() {
-    return this.load('saved_playlists') || [];
+    const playlists = this.load('saved_playlists') || [];
+    // Rehydrate: convert trackExplanations back from plain object → Map
+    for (const p of playlists) {
+      if (p.context?.explanations?.trackExplanations && !(p.context.explanations.trackExplanations instanceof Map)) {
+        p.context.explanations.trackExplanations = new Map(
+          Object.entries(p.context.explanations.trackExplanations)
+        );
+      }
+    }
+    return playlists;
   }
 
   static saveGeneratedPlaylist(context) {
+    // Deep-clone context and convert Map → plain object for JSON serialization
+    const serializable = JSON.parse(JSON.stringify(context, (key, value) => {
+      if (value instanceof Map) {
+        return Object.fromEntries(value);
+      }
+      return value;
+    }));
+
     const playlists = this.getSavedPlaylists();
     const newPlaylist = {
       id: Date.now().toString(),
       createdAt: Date.now(),
-      context: context
+      context: serializable
     };
     playlists.unshift(newPlaylist);
     this.save('saved_playlists', playlists);

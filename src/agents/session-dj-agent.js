@@ -12,6 +12,7 @@
  *  - Full listen → positive signal
  */
 import { DataStore } from '../data/data-store.js';
+import { UserModel } from './user-model.js';
 
 export class SessionDJAgent {
   constructor(onIntervention = null) {
@@ -51,6 +52,24 @@ export class SessionDJAgent {
 
     // Phase 2E: Persist to DataStore so TasteGame + Scout can read signals
     this._persistSignals();
+
+    // Phase 6: Log separated behavioral evidence to UserModel (Tier 2)
+    try {
+      const type = listenMs < 5000 ? 'rapidSkip' : 'skip';
+      UserModel.logBehavioralEvent(type, {
+        trackId: candidate.track?.id,
+        trackName: candidate.track?.name,
+        artistName: candidate.artistName,
+        genres: (candidate.tags || []).map(t => typeof t === 'object' ? t.name : t).slice(0, 3),
+        listenMs,
+        source: candidate.source,
+      });
+      // Update Tier 3 session signals
+      UserModel.updateSessionSignals({
+        consecutiveSkips: this.consecutiveSkips,
+        skipStreak: [...(UserModel.getSessionState()?.realTimeSignals?.skipStreak || []), candidate.artistName].slice(-5),
+      });
+    } catch (e) { /* UserModel may not be available */ }
   }
 
   /**
@@ -72,6 +91,22 @@ export class SessionDJAgent {
 
     // Phase 2E: Persist to DataStore
     this._persistSignals();
+
+    // Phase 6: Log positive behavioral evidence to UserModel (Tier 2)
+    try {
+      UserModel.logBehavioralEvent('fullListen', {
+        trackId: candidate.track?.id,
+        trackName: candidate.track?.name,
+        artistName: candidate.artistName,
+        genres: (candidate.tags || []).map(t => typeof t === 'object' ? t.name : t).slice(0, 3),
+        source: candidate.source,
+      });
+      // Reset skip streak on Tier 3
+      UserModel.updateSessionSignals({
+        consecutiveSkips: 0,
+        loveStreak: [...(UserModel.getSessionState()?.realTimeSignals?.loveStreak || []), candidate.artistName].slice(-5),
+      });
+    } catch (e) { /* UserModel may not be available */ }
   }
 
   /**

@@ -73,7 +73,7 @@ export function renderPlaylistPage(container) {
 
     listEl.innerHTML = playlists.map(p => {
       const title = p.context?.explanations?.playlistTitle || p.context?.playlistTitle || (p.context?.sessionIntent?.slice(0, 60) || 'Curated Playlist');
-      const desc = p.context?.explanations?.playlistSummary || p.context?.playlistSummary || '';
+      const desc = p.context?.curatorReflection || p.context?.explanations?.playlistSummary || p.context?.playlistSummary || '';
       const trackCount = p.context?.scoredPlaylist?.length || 0;
       const date = new Date(p.createdAt).toLocaleDateString();
       return `

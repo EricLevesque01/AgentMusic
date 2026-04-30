@@ -19,7 +19,7 @@ export class NarratorAgent {
    * @param {object} context - PipelineContext for inter-agent communication
    * @returns {Promise<{ playlistSummary, trackExplanations: Map }>}
    */
-  async generate(scoredPlaylist, tasteState, sessionIntent, context = null) {
+  async generate(scoredPlaylist, tasteState, sessionIntent, context = null, onThought = null) {
     if (!scoredPlaylist || scoredPlaylist.length === 0) {
       return {
         playlistSummary: 'No tracks to explain.',
@@ -27,12 +27,15 @@ export class NarratorAgent {
       };
     }
 
+    if (onThought) onThought("Narrator: Synthesizing track connections...");
+
     // 1. Enrich the top 5 unique artists with MusicBrainz structural data
     // (We limit to 5 to respect the 1 req/sec limit and avoid long loading times)
     const uniqueArtists = [...new Set(scoredPlaylist.map(t => t.artistName))].slice(0, 5);
     const mbDataStr = [];
     
     for (const name of uniqueArtists) {
+      if (onThought) onThought(`Narrator: Pulling structural context for ${name}...`);
       const meta = await getArtistMetadata(name);
       if (meta && meta.mbid) {
         const genres = await getArtistGenres(meta.mbid);
@@ -110,8 +113,10 @@ Analyze the tracks and the MusicBrainz data. Call the 'submit_explanations' tool
         for (const item of submitCall.args.trackExplanations || []) {
           trackMap.set(item.trackId, item.explanation);
         }
+        // Prefer the Curator's playlist name (it has the most context) over the Narrator's
+        const curatorName = context?.playlistName;
         return {
-          playlistTitle: submitCall.args.playlistTitle || 'Curated Playlist',
+          playlistTitle: curatorName || submitCall.args.playlistTitle || 'Curated Playlist',
           playlistSummary: submitCall.args.playlistSummary || 'A custom mix based on your taste graph.',
           trackExplanations: trackMap
         };
@@ -126,7 +131,7 @@ Analyze the tracks and the MusicBrainz data. Call the 'submit_explanations' tool
       fallbackMap.set(c.track.id, `Selected due to its strong ${c.dominantFactor} affinity with your profile.`);
     }
     return {
-      playlistTitle: 'Curated Mix',
+      playlistTitle: context?.playlistName || 'Curated Mix',
       playlistSummary: `A custom mix of ${scoredPlaylist.length} tracks based on your taste graph.`,
       trackExplanations: fallbackMap,
     };
@@ -182,27 +187,10 @@ CRITICAL RULES:
       if (result.textReply) {
         return result.textReply.trim();
       }
+      throw new Error("Empty text reply from LLM");
     } catch (err) {
       console.warn("NarratorAgent: Agentic Profile LLM failed.", err);
+      throw new Error("Failed to generate agentic profile: " + err.message);
     }
-    
-    const fallbackGenresList = tasteState.topGenres || [];
-    const fallbackGenres = fallbackGenresList.slice(0, 3).join(', ').replace(/, ([^,]*)$/, ' and $1');
-    const fallbackArtists = (tasteState.topRankedArtists || []).slice(0, 3).map(a => a.name).join(', ').replace(/, ([^,]*)$/, ' and $1');
-    
-    let vibe = "Eclectic & Unpredictable";
-    const gStr = fallbackGenresList.join(' ').toLowerCase();
-    if (gStr.includes('indie') || gStr.includes('dream') || gStr.includes('shoegaze') || gStr.includes('alternative')) vibe = "Atmospheric & Nostalgic";
-    else if (gStr.includes('rock') || gStr.includes('metal') || gStr.includes('punk')) vibe = "Heavy & High-Energy";
-    else if (gStr.includes('pop') || gStr.includes('r&b') || gStr.includes('soul')) vibe = "Catchy & Soulful";
-    else if (gStr.includes('electronic') || gStr.includes('dance') || gStr.includes('house')) vibe = "Rhythmic & Driving";
-    else if (gStr.includes('hip hop') || gStr.includes('rap')) vibe = "Beat-Driven & Lyrical";
-    else if (fallbackGenresList.length > 5) vibe = "Broad & Experimental";
-
-    if (fallbackArtists && fallbackGenres) {
-      return `<strong>Your musical vibe: ${vibe}</strong><br><br>I've always noticed you gravitate toward ${fallbackGenres}. It's so classic you to keep artists like ${fallbackArtists} in heavy rotation. Your taste feels like you're trying to recreate the exact feeling of discovering those core sounds, but you're not afraid to mix it up. Your sonic identity is unmistakably yours—it feels less like an algorithm and more like a handwritten mixtape you've been putting together for years.`;
-    }
-
-    return "You have an eclectic blend of sonic textures. Based on your current trajectory, you seem to be searching for something rhythmic and adventurous, pushing the boundaries of what you normally keep on repeat.";
   }
 }

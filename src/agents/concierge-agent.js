@@ -7,23 +7,11 @@
  * Acts:       Routes parsed actions to Orchestrator, returns conversational reply
  */
 import { callWithTools } from '../data/gemini-api.js';
+import { buildSoulPrefix } from './soul.js';
+import { UserModel } from './user-model.js';
 
 // --- Gemini Function Declarations ---
 const TOOL_DECLARATIONS = [
-  {
-    name: 'adjust_sliders',
-    description: 'Adjust one or more of the 5 session intent sliders based on the user\'s request. Values are 0.0 to 1.0.',
-    parameters: {
-      type: 'object',
-      properties: {
-        discovery:  { type: 'number', description: '0=Familiar, 1=Adventurous' },
-        popularity: { type: 'number', description: '0=Mainstream, 1=Underground' },
-        energy:     { type: 'number', description: '0=Low energy, 1=High energy' },
-        focus:      { type: 'number', description: '0=Cohesive, 1=Varied' },
-        novelty:    { type: 'number', description: '0=Known tracks, 1=Unknown tracks' },
-      },
-    },
-  },
   {
     name: 'boost_genre',
     description: 'Prioritize a specific genre in the playlist.',
@@ -119,6 +107,24 @@ const TOOL_DECLARATIONS = [
         action: { type: 'string', description: '"boost", "banish", or "remember"' },
       },
       required: ['target', 'action'],
+    },
+  },
+  {
+    name: 'classify_motivation',
+    description: 'Tag the session intent with a functional listening purpose. Call this when the user describes what they want music FOR (e.g., studying, working out, unwinding, road trip).',
+    parameters: {
+      type: 'object',
+      properties: {
+        motivation: {
+          type: 'string',
+          description: 'One of: emotion_regulation, arousal_modulation, focus, identity_expression, social_bonding, transcendence, companionship, nostalgia'
+        },
+        confidence: {
+          type: 'number',
+          description: 'How confident you are in this classification, 0.0-1.0'
+        },
+      },
+      required: ['motivation'],
     },
   },
 ];
@@ -226,7 +232,15 @@ export class ConciergeAgent {
       : 'No rated artists yet.';
     const totalRated = context?.tasteState?.totalRatedArtists || 0;
 
-    return `You are Agent Music's Concierge — a conversational music companion who knows the user's taste deeply.
+    // UserModel enrichment
+    let userModelContext = '';
+    try {
+      userModelContext = UserModel.buildConciergeContext();
+    } catch (e) { /* Not yet populated */ }
+
+    return `${buildSoulPrefix()}
+
+You are acting as the Concierge — the conversational interface of TasteGraph.
 
 YOUR KNOWLEDGE OF THE SYSTEM:
 You are part of a team of specialized agents:
@@ -245,9 +259,12 @@ TASTE TIERS:
 - Actively Disliked (F-Tier): ${fTier}
 - Top Genres: ${genres}
 
+${userModelContext}
+
 ${trackCount > 0 ? `CURRENT PLAYLIST: ${trackCount} tracks loaded.` : 'No playlist currently loaded.'}
 
 Your job is to understand what the user wants and call the appropriate function(s).
+When the user describes WHAT THEY WANT MUSIC FOR (studying, working out, road trip, etc.), ALSO call classify_motivation to tag the session purpose.
 If a user asks about their taste, top artists, or vibe — use the leaderboard data above to answer directly. You know their music taste like a close friend.
 If a user asks for artist recommendations, use suggest_artists to inject them into the game pool.
 Always be brief, warm, and music-focused. Reply in 1-3 sentences max.`;
@@ -266,6 +283,7 @@ Always be brief, warm, and music-focused. Reply in 1-3 sentences max.`;
       case 'create_playlist':  return { type: 'create_playlist', theme: args.theme };
       case 'summarize_taste':  return { type: 'summarize_taste' };
       case 'adjust_preference':return { type: 'adjust_preference', target: args.target, action: args.action };
+      case 'classify_motivation': return { type: 'classify_motivation', motivation: args.motivation, confidence: args.confidence || 0.5 };
       default:                 return { type: 'freeform_chat' };
     }
   }

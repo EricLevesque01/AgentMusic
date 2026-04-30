@@ -13,6 +13,13 @@ import {
   getRecentlyPlayedArtists
 } from '../data/spotify-api.js';
 import { DataStore } from '../data/data-store.js';
+import {
+  computeMusicDimensions,
+  computeGenreDistribution,
+  computeMainstreaminess,
+  computeSpecialistIndex,
+  computeDiversityScore,
+} from '../data/music-dimensions.js';
 
 const DEFAULT_ELO = 1500;
 
@@ -26,13 +33,15 @@ export class ProfilerAgent {
    * as a proxy for energy/valence. Scout Agent will handle richer enrichment
    * via Last.fm tags in Phase 5.
    */
-  async buildTasteState() {
+  async buildTasteState(onThought = null) {
+    if (onThought) onThought("Profiler: Compiling long-term user taste state...");
     // --- Perceive: Fetch data ---
     let artists = DataStore.getTopArtists();
     let tracks  = DataStore.getTopTracks();
 
     if (!artists || !tracks || artists.length <= 50) {
       try {
+        if (onThought) onThought("Profiler: Fetching fresh top entities from Spotify...");
         const [
           shortArtists, 
           mediumArtists, 
@@ -51,6 +60,13 @@ export class ProfilerAgent {
           getTopTracks('medium_term', 50),
         ]);
         
+        // --- Task 3.1: Preserve temporal layers before merging ---
+        this._temporalLayers = {
+          identity: (longArtists || []).map(a => ({ id: a.id, name: a.name })),
+          evolution: (mediumArtists || []).map(a => ({ id: a.id, name: a.name })),
+          mood: (shortArtists || []).map(a => ({ id: a.id, name: a.name })),
+        };
+
         const artistMap = new Map();
         const addArtists = (list) => {
           if (!list) return;
@@ -98,6 +114,22 @@ export class ProfilerAgent {
       activelyDismissed: [...allRanked].reverse().filter(a => a.rating < 1400).slice(0, 10).map(a => a.name)
     };
 
+    // --- Task 3.4: Compute proportional genre distribution ---
+    const genreDistribution = computeGenreDistribution(
+      allRanked.map(a => ({ genres: a.genres || [], macroGenres: a.macroGenres || [], id: null })),
+      eloRatings
+    );
+
+    // --- Task 3.2: Compute MUSIC psychological dimensions ---
+    const musicDimensions = computeMusicDimensions(genreDistribution);
+
+    // --- Task 3.3: Compute discovery profile metrics ---
+    const discoveryProfile = {
+      mainstreaminess: computeMainstreaminess(artists),
+      specialistIndex: computeSpecialistIndex(eloRatings),
+      diversityScore: computeDiversityScore(genreDistribution),
+    };
+
     return {
       eloRatings,
       topRankedArtists: allRanked.slice(0, 50), // Exposed for UI Leaderboard rendering
@@ -105,6 +137,12 @@ export class ProfilerAgent {
       topGenres,
       artists,
       tracks,
+      // --- Phase 3: Research-backed enrichments ---
+      temporalLayers: this._temporalLayers || { identity: [], evolution: [], mood: [] },
+      genreDistribution,
+      musicDimensions,
+      discoveryProfile,
+      // --- Existing metadata ---
       userMetadata: DataStore.getUserMetadata(),
       explicitPreferences: DataStore.getExplicitPreferences(),
       sessionDefaults: DataStore.getSessionDefaults()

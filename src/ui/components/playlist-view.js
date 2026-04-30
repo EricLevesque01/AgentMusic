@@ -1,12 +1,14 @@
 /**
- * TasteGraph — Playlist View Component (v2 — Deep Space Pro)
- * Pro-tool track list with always-visible metric bars and
- * right-panel Node Inspector integration.
+ * TasteGraph — Playlist View Component
+ * Track list with audio previews and Session DJ integration.
  */
 
 export class PlaylistView {
   constructor(container) {
     this.container = container;
+    this._currentAudio = null;
+    this._currentBtn = null;
+    this._listenStart = null;
   }
 
   render(context) {
@@ -29,7 +31,13 @@ export class PlaylistView {
           <div style="flex:1;">
             <div class="section-label" style="margin-bottom:var(--space-1); font-size:var(--font-size-lg); color:var(--text-primary);">${explanations?.playlistTitle || 'Generated Playlist'}</div>
             <p style="color:var(--text-secondary);font-size:var(--font-size-sm);
-                      font-style:italic;">${explanations?.playlistSummary || 'Curated by the Agent Music pipeline based on your taste profile.'}</p>
+                      font-style:italic;margin-bottom:var(--space-2);">${explanations?.playlistSummary || 'Curated by the Agent Music pipeline based on your taste profile.'}</p>
+            ${context.curatorReflection ? `
+            <div style="padding:var(--space-3); background:var(--bg-tertiary); border-left:3px solid var(--accent-primary); border-radius:var(--radius-sm); margin-top:var(--space-3);">
+              <div style="font-size:var(--font-size-xs); color:var(--accent-primary); text-transform:uppercase; letter-spacing:0.05em; margin-bottom:4px; font-weight:var(--font-weight-bold);">Curator's Reflection</div>
+              <p style="color:var(--text-primary); font-size:var(--font-size-sm); line-height:1.5;">${context.curatorReflection}</p>
+            </div>
+            ` : ''}
           </div>
           <button id="btn-save-spotify" class="btn btn-sm"
                   style="background:#1DB954;color:#000;border-color:#1DB954;flex-shrink:0;font-weight:700;">
@@ -56,7 +64,7 @@ export class PlaylistView {
           const { getCurrentUser, createPlaylist, addTracksToPlaylist } = await import('../../data/spotify-api.js');
           const user = await getCurrentUser();
           const uris = scoredPlaylist.map(c => `spotify:track:${c.track.id}`);
-          const pl = await createPlaylist(user.id, explanations?.playlistTitle || `TasteGraph: ${new Date().toLocaleDateString()}`, explanations?.playlistSummary || '');
+          const pl = await createPlaylist(user.id, explanations?.playlistTitle || `Agent Music: ${new Date().toLocaleDateString()}`, explanations?.playlistSummary || '');
           await addTracksToPlaylist(pl.id, uris);
           saveBtn.innerText = 'Saved ✓';
           saveBtn.style.cssText += ';background:var(--bg-tertiary);color:var(--text-primary);border-color:var(--border-subtle);';
@@ -68,191 +76,134 @@ export class PlaylistView {
       });
     }
 
-    // Wire inspector panel
-    this._wireInspector(scoredPlaylist, explanations);
+    // Wire up audio play/skip buttons
+    this._attachAudioListeners(scoredPlaylist);
   }
 
   _renderTrack(candidate, index, explanations) {
-    const { track, artistName, dominantFactor, finalScore, breakdown = {}, hopDistance } = candidate;
+    const { track, artistName, dominantFactor } = candidate;
     if (!track) return ''; // Safety: skip invalid entries
     const albumImg = track.album?.images?.[0]?.url;
-
-    const factorColors = {
-      elo:     'var(--accent-primary)',
-      graph:   'var(--accent-cyan)',
-      audio:   'var(--accent-amber)',
-      session: 'var(--accent-green)',
-    };
-    const factorLabels = { elo: 'Taste', graph: 'Graph', audio: 'Audio', session: 'Session' };
-    const factorColor = factorColors[dominantFactor] || 'var(--accent-primary)';
-
-    const scorePercent = Math.round(finalScore * 100);
-    const eloW   = Math.round((breakdown.eloComponent   || 0) * 100);
-    const graphW = Math.round((breakdown.graphComponent  || 0) * 100);
-    const audioW = Math.round((breakdown.audioComponent  || 0) * 100);
-    const sessW  = Math.round((breakdown.sessionComponent|| 0) * 100);
-    const hopLabel = ['Direct', 'Hop ×1', 'Hop ×2'][hopDistance] ?? '—';
-
-    const metrics = [
-      { label: 'Taste',   value: eloW,   color: 'var(--accent-primary)' },
-      { label: 'Graph',   value: graphW, color: 'var(--accent-cyan)' },
-      { label: 'Audio',   value: audioW, color: 'var(--accent-amber)' },
-      { label: 'Session', value: sessW,  color: 'var(--accent-green)' },
-    ];
+    const previewUrl = track.preview_url || '';
+    
+    const explanation = dominantFactor && dominantFactor !== 'Selected based on your taste profile.' 
+      ? dominantFactor 
+      : 'Curator selected this track based on the overall session intent and your taste profile.';
 
     return `
       <div class="glass-card" id="track-card-${index}"
-           style="padding:var(--space-3) var(--space-4);cursor:pointer;
+           style="padding:var(--space-4);margin-bottom:var(--space-3);
                   border-left:2px solid transparent;
                   transition:border-color var(--transition-fast),background var(--transition-fast);"
            data-track-index="${index}"
-           onmouseover="this.style.borderLeftColor='${factorColor}';this.style.background='var(--bg-card-hover)';"
+           onmouseover="this.style.borderLeftColor='var(--accent-primary)';this.style.background='var(--bg-card-hover)';"
            onmouseout="this.style.borderLeftColor='transparent';this.style.background='';">
 
-        <!-- Top row -->
-        <div style="display:flex;align-items:center;gap:var(--space-3);">
-          <div style="width:22px;text-align:center;font-size:var(--font-size-xs);
-                      color:var(--text-muted);font-variant-numeric:tabular-nums;flex-shrink:0;">
+        <div style="display:flex;gap:var(--space-4);">
+          <!-- Track Number -->
+          <div style="width:24px;text-align:center;font-size:var(--font-size-md);
+                      color:var(--text-muted);font-variant-numeric:tabular-nums;flex-shrink:0;padding-top:4px;">
             ${index + 1}
           </div>
 
-          <div style="width:44px;height:44px;border-radius:var(--radius-md);
-                      overflow:hidden;background:var(--bg-tertiary);flex-shrink:0;">
+          <!-- Album Art -->
+          <div style="width:56px;height:56px;border-radius:var(--radius-md);
+                      overflow:hidden;background:var(--bg-tertiary);flex-shrink:0;box-shadow:0 4px 12px rgba(0,0,0,0.2);">
             ${albumImg
               ? `<img src="${albumImg}" alt="" style="width:100%;height:100%;object-fit:cover;">`
-              : `<div style="width:100%;height:100%;display:flex;align-items:center;justify-content:center;color:var(--text-muted);font-size:18px;">♪</div>`
+              : `<div style="width:100%;height:100%;display:flex;align-items:center;justify-content:center;color:var(--text-muted);font-size:24px;">♪</div>`
             }
           </div>
 
+          <!-- Track Info & Explanation -->
           <div style="flex:1;min-width:0;">
-            <div style="font-weight:var(--font-weight-semibold);font-size:var(--font-size-sm);
+            <div style="font-weight:var(--font-weight-bold);font-size:var(--font-size-md);
                         white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:var(--text-bright);">${track.name}</div>
-            <div style="font-size:var(--font-size-xs);color:var(--text-secondary);margin-top:1px;">${artistName}</div>
-          </div>
-
-          <div style="display:flex;flex-direction:column;align-items:flex-end;gap:3px;flex-shrink:0;">
-            <span class="badge" style="background:${factorColor}18;color:${factorColor};border-color:${factorColor}30;">
-              ${factorLabels[dominantFactor] || dominantFactor}
-            </span>
-            <span class="badge">${hopLabel}</span>
-          </div>
-        </div>
-
-        <!-- Always-visible metric bars -->
-        <div style="margin-top:var(--space-3);padding-top:var(--space-3);border-top:1px solid var(--border-subtle);">
-          <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:var(--space-2);">
-            ${metrics.map(m => `
-              <div>
-                <div style="display:flex;justify-content:space-between;margin-bottom:3px;">
-                  <span style="font-size:var(--font-size-2xs);color:var(--text-muted);
-                               text-transform:uppercase;letter-spacing:0.05em;">${m.label}</span>
-                  <span style="font-size:var(--font-size-2xs);color:${m.color};
-                               font-variant-numeric:tabular-nums;">${m.value}%</span>
-                </div>
-                <div class="metric-bar-track">
-                  <div class="metric-bar-fill" style="width:${m.value}%;background:${m.color};"></div>
-                </div>
-              </div>
-            `).join('')}
+            <div style="font-size:var(--font-size-sm);color:var(--text-secondary);margin-top:2px;margin-bottom:var(--space-2);">${artistName}</div>
+            <p style="font-size:var(--font-size-sm);color:var(--text-primary);line-height:1.5;">${explanation}</p>
+            ${previewUrl ? `
+            <div style="margin-top:var(--space-2);">
+              <audio id="audio-pl-${index}" src="${previewUrl}" preload="none"></audio>
+              <button class="btn btn-ghost btn-sm playlist-play-btn" data-index="${index}"
+                style="font-size:11px; padding:3px 10px; border:1px solid var(--border-glass); border-radius:var(--radius-full);
+                       transition:all 0.2s;"
+              >▶ Preview</button>
+            </div>
+            ` : ''}
           </div>
         </div>
       </div>
     `;
   }
 
-  _wireInspector(scoredPlaylist, explanations) {
-    scoredPlaylist.forEach((c, i) => {
-      const card = document.getElementById(`track-card-${i}`);
-      if (!card) return;
-      card.addEventListener('click', () => this._showInspector(c, explanations));
+  /**
+   * Wire audio play buttons to the Session DJ for skip/listen tracking.
+   */
+  _attachAudioListeners(scoredPlaylist) {
+    const buttons = this.container.querySelectorAll('.playlist-play-btn');
+
+    buttons.forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const idx = parseInt(btn.dataset.index, 10);
+        const audio = document.getElementById(`audio-pl-${idx}`);
+        if (!audio) return;
+
+        const isPlaying = btn.dataset.playing === 'true';
+
+        // Stop any currently playing audio and report it to the DJ
+        this._stopCurrent();
+
+        if (!isPlaying) {
+          // Start playing
+          audio.play();
+          btn.dataset.playing = 'true';
+          btn.innerHTML = '⏸ Playing…';
+          btn.style.borderColor = 'var(--accent-primary)';
+          btn.style.color = 'var(--accent-primary)';
+          this._currentAudio = audio;
+          this._currentBtn = btn;
+          this._listenStart = Date.now();
+
+          // When preview ends naturally → full listen → positive signal
+          audio.onended = () => {
+            btn.dataset.playing = 'false';
+            btn.innerHTML = '▶ Preview';
+            btn.style.borderColor = 'var(--border-glass)';
+            btn.style.color = '';
+            const candidate = scoredPlaylist[idx];
+            if (candidate && window.TG?.dj) {
+              window.TG.dj.recordListen(candidate);
+            }
+            this._currentAudio = null;
+            this._currentBtn = null;
+          };
+        }
+      });
     });
   }
 
-  _showInspector(candidate, explanations) {
-    const inspector = document.getElementById('inspector-content');
-    if (!inspector) return;
-    document.body.classList.add('inspector-open');
+  /**
+   * Stop the currently playing preview and report skip duration to the DJ.
+   */
+  _stopCurrent() {
+    if (this._currentAudio && this._currentBtn) {
+      const listenMs = Date.now() - (this._listenStart || Date.now());
+      this._currentAudio.pause();
+      this._currentAudio.currentTime = 0;
+      this._currentBtn.dataset.playing = 'false';
+      this._currentBtn.innerHTML = '▶ Preview';
+      this._currentBtn.style.borderColor = 'var(--border-glass)';
+      this._currentBtn.style.color = '';
 
-    const { track, artistName, dominantFactor, finalScore, breakdown = {}, hopDistance, tags } = candidate;
-    const explanation = explanations?.trackExplanations?.get(track.id) || 'No explanation available.';
-    const albumImg = track.album?.images?.[0]?.url;
-    const scorePercent = Math.round(finalScore * 100);
-    const hopLabel = ['Direct', 'Hop ×1', 'Hop ×2'][hopDistance] ?? '—';
+      // If they listened less than 10s before switching, it's a skip
+      if (listenMs < 10000 && window.TG?.dj) {
+        // We don't have the candidate reference here, but the DJ still tracks the skip count
+        window.TG.dj.consecutiveSkips++;
+      }
 
-    const metrics = [
-      { label: 'Taste Match',    value: Math.round((breakdown.eloComponent   || 0) * 100), color: 'var(--accent-primary)' },
-      { label: 'Graph Distance', value: Math.round((breakdown.graphComponent  || 0) * 100), color: 'var(--accent-cyan)' },
-      { label: 'Audio Profile',  value: Math.round((breakdown.audioComponent  || 0) * 100), color: 'var(--accent-amber)' },
-      { label: 'Session Match',  value: Math.round((breakdown.sessionComponent|| 0) * 100), color: 'var(--accent-green)' },
-    ];
-
-    const topTags = (tags || []).slice(0, 6).map(t => t.name || t).filter(Boolean);
-
-    inspector.innerHTML = `
-      <div style="position:relative;background:var(--bg-tertiary);">
-        ${albumImg
-          ? `<img src="${albumImg}" style="width:100%;aspect-ratio:1;object-fit:cover;display:block;opacity:0.65;">`
-          : `<div style="width:100%;aspect-ratio:1;display:flex;align-items:center;justify-content:center;color:var(--text-muted);font-size:48px;">♪</div>`
-        }
-        <div style="position:absolute;bottom:0;left:0;right:0;
-                    padding:var(--space-3) var(--space-4);
-                    background:linear-gradient(transparent,rgba(6,13,26,0.96));">
-          <div style="font-weight:var(--font-weight-bold);color:var(--text-bright);
-                      font-size:var(--font-size-sm);">${track.name}</div>
-          <div style="font-size:var(--font-size-xs);color:var(--text-secondary);">${artistName}</div>
-        </div>
-      </div>
-
-      <div class="inspector-section">
-        <div class="inspector-metric">
-          <span class="inspector-metric-label">Relevance Score</span>
-          <span class="inspector-metric-value" style="font-size:var(--font-size-lg);">${scorePercent}%</span>
-        </div>
-        <div class="metric-bar-track" style="height:4px;">
-          <div class="metric-bar-fill"
-               style="width:${scorePercent}%;background:linear-gradient(90deg,var(--accent-primary),var(--accent-indigo));"></div>
-        </div>
-      </div>
-
-      <div class="inspector-section">
-        <div class="inspector-title" style="margin-bottom:var(--space-3);">Signal Breakdown</div>
-        ${metrics.map(m => `
-          <div class="inspector-metric">
-            <span class="inspector-metric-label">${m.label}</span>
-            <span class="inspector-metric-value" style="color:${m.color};">${m.value}%</span>
-          </div>
-          <div class="metric-bar-track" style="margin-bottom:var(--space-3);">
-            <div class="metric-bar-fill" style="width:${m.value}%;background:${m.color};"></div>
-          </div>
-        `).join('')}
-      </div>
-
-      <div class="inspector-section">
-        <div class="inspector-title" style="margin-bottom:var(--space-3);">Discovery Path</div>
-        <div class="inspector-metric">
-          <span class="inspector-metric-label">Graph Distance</span>
-          <span class="badge badge-blue">${hopLabel}</span>
-        </div>
-        <div class="inspector-metric" style="margin-top:var(--space-2);">
-          <span class="inspector-metric-label">Primary Signal</span>
-          <span class="badge badge-blue">${dominantFactor}</span>
-        </div>
-      </div>
-
-      ${topTags.length > 0 ? `
-        <div class="inspector-section">
-          <div class="inspector-title" style="margin-bottom:var(--space-3);">Tags</div>
-          <div style="display:flex;flex-wrap:wrap;gap:var(--space-2);">
-            ${topTags.map(t => `<span class="badge">${t}</span>`).join('')}
-          </div>
-        </div>
-      ` : ''}
-
-      <div class="inspector-section">
-        <div class="inspector-title" style="margin-bottom:var(--space-3);">Agent Rationale</div>
-        <p style="font-size:var(--font-size-xs);color:var(--text-secondary);
-                  line-height:1.65;font-style:italic;">${explanation}</p>
-      </div>
-    `;
+      this._currentAudio = null;
+      this._currentBtn = null;
+    }
   }
 }

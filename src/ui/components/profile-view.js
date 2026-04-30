@@ -11,10 +11,59 @@ export class ProfileView {
   }
 
   async render() {
+    // Show skeleton shimmer matching the real profile layout for seamless loading
     this.container.innerHTML = `
-      <div class="glass-card" style="padding: var(--space-8); text-align: center;">
-        <div style="font-size: 2.5rem; margin-bottom: var(--space-4); animation: pulse 1s infinite;">👤</div>
-        <p style="color: var(--text-secondary);">Loading your Taste Identity (querying Agents...)</p>
+      <style>
+        @keyframes shimmer {
+          0% { background-position: -400px 0; }
+          100% { background-position: 400px 0; }
+        }
+        .skeleton-shimmer {
+          background: linear-gradient(90deg, rgba(255,255,255,0.03) 25%, rgba(255,255,255,0.08) 50%, rgba(255,255,255,0.03) 75%);
+          background-size: 800px 100%;
+          animation: shimmer 1.6s ease-in-out infinite;
+          border-radius: var(--radius-md);
+        }
+      </style>
+      <div style="display: flex; flex-direction: column; gap: var(--space-6); animation: fadeInUp 300ms ease forwards;">
+
+        <!-- Skeleton: Hero Card -->
+        <div style="background: linear-gradient(135deg, rgba(61, 139, 255, 0.08), rgba(99, 102, 241, 0.05)); border: 1px solid rgba(61, 139, 255, 0.15); border-radius: var(--radius-xl); padding: var(--space-6); display: flex; align-items: center; gap: var(--space-6);">
+          <div class="skeleton-shimmer" style="width: 120px; height: 120px; border-radius: 50%; flex-shrink: 0;"></div>
+          <div style="flex: 1; display: flex; flex-direction: column; gap: var(--space-3);">
+            <div class="skeleton-shimmer" style="height: 28px; width: 70%;"></div>
+            <div class="skeleton-shimmer" style="height: 16px; width: 90%;"></div>
+            <div class="skeleton-shimmer" style="height: 16px; width: 60%;"></div>
+          </div>
+        </div>
+
+        <!-- Skeleton: Sonic Dossier -->
+        <div style="background: rgba(139, 92, 246, 0.04); border: 1px solid rgba(139, 92, 246, 0.1); border-left: 4px solid rgba(61, 139, 255, 0.3); padding: var(--space-5); border-radius: var(--radius-lg);">
+          <div class="skeleton-shimmer" style="height: 16px; width: 180px; margin-bottom: var(--space-3);"></div>
+          <div class="skeleton-shimmer" style="height: 14px; width: 100%; margin-bottom: var(--space-2);"></div>
+          <div class="skeleton-shimmer" style="height: 14px; width: 85%; margin-bottom: var(--space-2);"></div>
+          <div class="skeleton-shimmer" style="height: 14px; width: 70%;"></div>
+        </div>
+
+        <!-- Skeleton: Genre Radar + Tier List row -->
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: var(--space-4);">
+          <div class="glass-card" style="padding: var(--space-5);">
+            <div class="skeleton-shimmer" style="height: 16px; width: 120px; margin-bottom: var(--space-4);"></div>
+            <div class="skeleton-shimmer" style="height: 280px; border-radius: var(--radius-lg);"></div>
+          </div>
+          <div class="glass-card" style="padding: var(--space-5); display: flex; flex-direction: column; gap: 6px;">
+            <div class="skeleton-shimmer" style="height: 16px; width: 120px; margin-bottom: var(--space-2);"></div>
+            ${[1,2,3,4,5].map(() => `<div class="skeleton-shimmer" style="height: 48px;"></div>`).join('')}
+          </div>
+        </div>
+
+        <!-- Skeleton: Leaderboard -->
+        <div class="glass-card" style="padding: var(--space-5);">
+          <div class="skeleton-shimmer" style="height: 20px; width: 160px; margin-bottom: var(--space-4);"></div>
+          <div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: var(--space-2);">
+            ${Array.from({length: 8}, () => `<div class="skeleton-shimmer" style="height: 52px;"></div>`).join('')}
+          </div>
+        </div>
       </div>
     `;
 
@@ -59,8 +108,13 @@ export class ProfileView {
     // Start rendering the static profile UI immediately
     const prefs = DataStore.getExplicitPreferences();
 
+    // Smooth crossfade: fade out skeleton → swap → fade in real content
+    this.container.style.transition = 'opacity 200ms ease';
+    this.container.style.opacity = '0';
+    await new Promise(r => setTimeout(r, 200));
+
     this.container.innerHTML = `
-      <div style="display: flex; flex-direction: column; gap: var(--space-6); animation: fadeInUp 400ms ease forwards;">
+      <div style="display: flex; flex-direction: column; gap: var(--space-6); opacity: 0; animation: fadeInUp 400ms ease forwards;">
 
         <!-- Hero: Taste DNA + Top Artist -->
         <div style="display: grid; grid-template-columns: 1fr; gap: var(--space-4);">
@@ -136,21 +190,63 @@ export class ProfileView {
       </div>
     `;
 
+    // Fade in the real content
+    this.container.style.opacity = '1';
+
     // Draw canvas visualizations
     requestAnimationFrame(() => {
       this._drawRadarChart(stats.genreDistribution);
     });
 
-    // Fire off async tasks without blocking the UI
-    const narrator = new NarratorAgent();
-    narrator.generateAgenticProfile(tasteState).then(profile => {
-      const el = document.getElementById('agentic-profile-text');
-      if (el) el.innerHTML = profile;
-    }).catch(err => {
-      console.warn('Failed to generate agentic profile:', err);
-      const el = document.getElementById('agentic-profile-text');
-      if (el) el.innerHTML = "Your eclectic taste is too mysterious to analyze right now.";
-    });
+    // Musical Vibe: Cache-first strategy
+    // Show cached version instantly, regenerate in background only if stale
+    const currentHash = rankedArtists.slice(0, 5).map(a => a.name).join(',');
+    const cached = DataStore.load('agentic_profile_cache');
+    const el = document.getElementById('agentic-profile-text');
+
+    if (cached && cached.html && el) {
+      // Show cached version immediately (no spinner!)
+      el.innerHTML = cached.html;
+      el.style.opacity = '1';
+
+      // Check if stale (> 30 min or artist lineup changed)
+      const isStale = Date.now() - (cached.generatedAt || 0) > 30 * 60 * 1000;
+      const artistsChanged = cached.artistHash !== currentHash;
+
+      if (isStale || artistsChanged) {
+        // Silently refresh in background — no spinner, no flash
+        const narrator = new NarratorAgent();
+        narrator.generateAgenticProfile(tasteState).then(profile => {
+          if (profile && el) {
+            el.style.transition = 'opacity 300ms ease';
+            el.style.opacity = '0.7';
+            setTimeout(() => {
+              el.innerHTML = profile;
+              el.style.opacity = '1';
+            }, 300);
+            DataStore.save('agentic_profile_cache', {
+              html: profile, generatedAt: Date.now(), artistHash: currentHash,
+            });
+          }
+        }).catch(() => { /* keep showing cached version */ });
+      }
+    } else if (el) {
+      // No cache at all — generate fresh (first-time user or cleared data)
+      const narrator = new NarratorAgent();
+      narrator.generateAgenticProfile(tasteState).then(profile => {
+        if (el) {
+          el.style.transition = 'opacity 400ms ease';
+          el.innerHTML = profile;
+          el.style.opacity = '1';
+        }
+        DataStore.save('agentic_profile_cache', {
+          html: profile, generatedAt: Date.now(), artistHash: currentHash,
+        });
+      }).catch(err => {
+        console.warn('Failed to generate agentic profile:', err);
+        if (el) el.innerHTML = "Your eclectic taste is too mysterious to analyze right now.";
+      });
+    }
 
     // Background task: Backfill missing genres via Last.fm for cached Elo ratings
     this._backfillMissingGenres(rankedArtists).catch(() => {});

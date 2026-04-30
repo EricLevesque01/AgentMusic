@@ -59,6 +59,37 @@ export class PipelineContext {
       anchoredTopArtist: null,  // the settled #1 (north star for Curator)
       driftSummary: '',         // from detectDriftPatterns()
     };
+
+    // Curator reflection — set by Curator, read by Narrator
+    this.curatorReflection = '';
+
+    // --- Blackboard: Structured inter-agent handoff notes (Phase 5) ---
+    this.blackboard = {
+      profiler: {
+        musicDimensions: null,    // MUSIC psychological dimensions
+        discoveryProfile: null,   // mainstreaminess, specialist, diversity
+        genreDistribution: null,  // proportional genre targets
+        temporalLayers: null,     // identity/evolution/mood
+        driftPatterns: [],        // from detectDriftPatterns()
+      },
+      scout: {
+        searchStrategy: '',       // natural language explanation of what Scout did
+        totalCandidates: 0,       // size of the pool passed to Curator
+        hopDepthUsed: 0,          // actual hop depth chosen
+        highConfidence: [],       // artist names from hop-0 (user's own)
+        riskyBets: [],            // artist names from hop-2 (deep exploration)
+        gaps: [],                 // coverage gaps that influenced hop-2
+      },
+      curator: {
+        selectionThesis: '',      // the Curator's reflection on its choices
+        discoveryRatio: 0,        // fraction of tracks from hop-1/2
+        tradeoffs: '',            // what was sacrificed and why
+      },
+      narrator: {
+        playlistTitle: '',        // the creative title
+        sophisticationLevel: '',  // what explanation depth was used
+      },
+    };
   }
 
   /**

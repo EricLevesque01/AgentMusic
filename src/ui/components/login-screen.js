@@ -50,7 +50,7 @@ export function renderLoginScreen(container) {
           color: var(--text-muted);
           margin-bottom: var(--space-8);
           line-height: 1.55;
-        ">Connect Spotify to start ranking artists and discovering music made for your taste.</p>
+        ">Connect Spotify to rank artists, curate AI-powered playlists, and export them straight to your library.</p>
 
         <button class="btn btn-primary btn-lg" id="spotify-login-btn"
                 style="width:100%;gap:var(--space-3);margin-bottom:var(--space-4);">
@@ -61,7 +61,8 @@ export function renderLoginScreen(container) {
         </button>
 
         <p style="color:var(--text-muted);font-size:var(--font-size-xs);text-align:center;line-height:1.5;">
-          Read-only access. No data stored on external servers.
+          Your listening data stays on your device. We use Spotify to read your taste and export playlists.<br/>
+          No personal data is stored on external servers.
         </p>
       </div>
     </div>

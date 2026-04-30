@@ -8,15 +8,19 @@ import { ProfilerAgent } from './profiler-agent.js';
 import { ScoutAgent } from './scout-agent.js';
 import { CuratorAgent } from './curator-agent.js';
 import { NarratorAgent } from './narrator-agent.js';
+import { ReflectionAgent } from './reflection-agent.js';
+import { UserModel } from './user-model.js';
+import { DataStore } from '../data/data-store.js';
 
 export class Orchestrator {
   constructor(statusCallback = null, thoughtCallback = null) {
     this.statusCallback = statusCallback;
     this.thoughtCallback = thoughtCallback; // New callback for granular thoughts
-    this.profiler  = new ProfilerAgent();
-    this.scout     = new ScoutAgent();
-    this.curator   = new CuratorAgent();
-    this.narrator  = new NarratorAgent();
+    this.profiler    = new ProfilerAgent();
+    this.scout       = new ScoutAgent();
+    this.curator     = new CuratorAgent();
+    this.narrator    = new NarratorAgent();
+    this.reflection  = new ReflectionAgent();
     this._lastContext = null;
   }
 
@@ -40,16 +44,63 @@ export class Orchestrator {
     // --- Stage 1: Profiler ---
     this._reportStatus('profiler');
     context.validateForStage('profiler');
-    context.tasteState = await this.profiler.buildTasteState();
+    context.tasteState = await this.profiler.buildTasteState(this._reportThought.bind(this));
 
     // Populate inter-agent tasteProfile from profiler output
     this._populateTasteProfile(context);
+
+    // Populate blackboard with profiler enrichments (Phase 5)
+    if (context.blackboard) {
+      context.blackboard.profiler.musicDimensions = context.tasteState.musicDimensions || null;
+      context.blackboard.profiler.discoveryProfile = context.tasteState.discoveryProfile || null;
+      context.blackboard.profiler.genreDistribution = context.tasteState.genreDistribution || null;
+      context.blackboard.profiler.temporalLayers = context.tasteState.temporalLayers || null;
+    }
+
+    // Task 2.1: Call drift detection and populate blackboard + tasteProfile
+    try {
+      const driftPatterns = this.profiler.detectDriftPatterns(
+        context.tasteState.eloRatings
+          ? Object.values(context.tasteState.eloRatings)
+              .filter(a => a.last_compared_at)
+              .sort((a, b) => (b.last_compared_at || 0) - (a.last_compared_at || 0))
+              .slice(0, 20)
+              .map(a => ({
+                winnerId: a.wins > a.losses ? a.name : null,
+                loserId: a.losses > a.wins ? a.name : null,
+                winnerGenres: a.genres || [],
+                loserGenres: a.genres || [],
+                winnerComps: a.comparison_count || 0,
+                loserComps: a.comparison_count || 0,
+              }))
+          : []
+      );
+      if (driftPatterns.length > 0) {
+        context.tasteProfile.driftSummary = driftPatterns.map(p => p.description).join('; ');
+        if (context.blackboard) {
+          context.blackboard.profiler.driftPatterns = driftPatterns;
+        }
+      }
+    } catch (e) {
+      console.warn('Orchestrator: Drift detection failed:', e.message);
+    }
+
+    // Build the shared UserModel (Tier 1) from profiler output
+    try {
+      UserModel.buildFromProfiler(context.tasteState);
+      UserModel.initSession(sessionIntent);
+    } catch (e) {
+      console.warn('Orchestrator: UserModel build failed, continuing without:', e.message);
+    }
+
+    // Read session signals from DataStore (written by Session DJ)
+    context.sessionSignals = DataStore.getSessionSignals();
 
     // --- Stage 2: Scout — reads coverageGaps + sessionSignals ---
     this._reportStatus('scout');
     context.validateForStage('scout');
     context.candidatePool = await this.scout.findCandidates(
-      context.tasteState, context.sessionIntent, context
+      context.tasteState, context.sessionIntent, context, this._reportThought.bind(this)
     );
 
     // --- Stage 3: Curator — reads full context for LLM prompt enrichment ---
@@ -63,6 +114,17 @@ export class Orchestrator {
       context,
       this._reportThought.bind(this)
     );
+    context.curatorReflection = context.scoredPlaylist.curatorReflection;
+    context.playlistName = context.scoredPlaylist.playlistName || null;
+
+    // Write curator thesis to blackboard (Phase 5)
+    if (context.blackboard) {
+      context.blackboard.curator.selectionThesis = context.curatorReflection || '';
+      const hop1Plus = (context.scoredPlaylist || []).filter(t => (t.hopDistance || 0) >= 1).length;
+      context.blackboard.curator.discoveryRatio = context.scoredPlaylist?.length
+        ? Math.round((hop1Plus / context.scoredPlaylist.length) * 100) / 100
+        : 0;
+    }
 
     // --- Stage 4: Narrator — reads context for personalized copy ---
     this._reportStatus('narrator');
@@ -70,11 +132,31 @@ export class Orchestrator {
       context.scoredPlaylist,
       context.tasteState,
       context.sessionIntent,
-      context
+      context,
+      this._reportThought.bind(this)
     );
 
     this._reportStatus('narrator', true); // Done
     this._lastContext = context;
+
+    // Pre-warm the agentic profile in background (fire-and-forget)
+    // Add a 2s delay to prevent rate limiting (429s) right after the Narrator finishes
+    setTimeout(() => {
+      this.narrator.generateAgenticProfile(context.tasteState).then(profile => {
+        if (profile) {
+          try {
+            DataStore.save('agentic_profile_cache', {
+              html: profile,
+              generatedAt: Date.now(),
+              artistHash: (context.tasteState.topRankedArtists || []).slice(0, 5).map(a => a.name).join(','),
+            });
+          } catch (e) { /* DataStore may not be available */ }
+        }
+      }).catch(err => {
+        console.warn('Orchestrator: Background profile generation failed, skipping cache.', err);
+      });
+    }, 2000);
+
     return context;
   }
 
@@ -99,12 +181,14 @@ export class Orchestrator {
       this._lastContext,
       this._reportThought.bind(this)
     );
+    this._lastContext.curatorReflection = this._lastContext.scoredPlaylist.curatorReflection;
 
     this._reportStatus('narrator');
     this._lastContext.explanations = await this.narrator.generate(
       this._lastContext.scoredPlaylist,
       this._lastContext.tasteState,
-      this._lastContext.sessionIntent
+      this._lastContext.sessionIntent,
+      this._lastContext
     );
 
     this._reportStatus('narrator', true);
@@ -116,14 +200,6 @@ export class Orchestrator {
    */
   async handleConciergeAction(action) {
     switch (action.type) {
-      case 'adjust_sliders':
-        // Legacy action, convert to intent override
-        if (this._lastContext) {
-          this._lastContext.sessionIntent = "User requested a slight vibe adjustment.";
-          return this.rerank();
-        }
-        break;
-
       case 'boost_genre':
         return this.rerank({
           boostedGenres: [
@@ -153,11 +229,26 @@ export class Orchestrator {
         // Generate a new playlist using the explicit natural language theme
         return this.generatePlaylist(this._lastContext?.userId || 'default_user', action.theme);
 
+      case 'suggest_artists':
+        // Dispatch event to inject artists into the Taste Game pool
+        if (typeof window !== 'undefined' && action.artists?.length) {
+          window.dispatchEvent(new CustomEvent('tastegraph:inject-artists', { detail: action.artists }));
+        }
+        break;
+
+      case 'summarize_taste': {
+        // Generate and return the agentic taste profile
+        const tasteState = this._lastContext?.tasteState;
+        if (tasteState) {
+          const result = await this.narrator.generateAgenticProfile(tasteState);
+          return { ...(this._lastContext || {}), tasteSummary: result };
+        }
+        break;
+      }
+
       case 'adjust_preference':
         // Explicitly update Elo ratings to boost or banish an artist
         if (action.action === 'banish') {
-          // Banish artist from the current game pool or ratings
-          // We can dispatch an event or directly update DataStore
           const { DataStore } = await import('../data/data-store.js');
           const ratings = DataStore.getEloRatings();
           const target = action.target.toLowerCase();
@@ -179,10 +270,35 @@ export class Orchestrator {
         }
         break;
 
+      case 'classify_motivation':
+        // Tag the session with a functional listening purpose (Task 4.4)
+        try {
+          const session = UserModel.getSessionState();
+          if (session) session.motivation = action.motivation;
+        } catch (e) { /* UserModel not available */ }
+        break;
+
       default:
         console.warn('Orchestrator: unknown Concierge action type', action.type);
     }
     return this._lastContext;
+  }
+
+  /**
+   * End the current session and trigger the Reflection Agent.
+   * Called when user navigates away or explicitly ends listening.
+   * @param {Object} sessionDJData — { skipHistory, listenHistory, adjustments } from SessionDJ
+   */
+  async endSession(sessionDJData = {}) {
+    if (!this._lastContext) return null;
+
+    try {
+      const result = await this.reflection.reflect(sessionDJData, this._lastContext);
+      return result;
+    } catch (e) {
+      console.warn('Orchestrator: Reflection failed:', e.message);
+      return null;
+    }
   }
 
   /**
@@ -235,12 +351,11 @@ export class Orchestrator {
       .slice(0, 3)
       .map(([g]) => g);
 
-    // Copy coverage gaps from DataStore if the TasteGame wrote them
-    // (the game runs before playlist generation)
-    try {
-      const { DataStore } = context.tasteState?.eloRatings
-        ? { DataStore: null } // Already have the data in-memory
-        : {};
-    } catch (e) { /* no-op */ }
+    // Populate coverage gaps from under-explored genres
+    context.coverageGaps = context.tasteProfile.underExploredGenres.map(genre => ({
+      genre,
+      comparisons: genreComps[genre] || 0,
+      reason: `User has very few comparisons in ${genre}`,
+    }));
   }
 }

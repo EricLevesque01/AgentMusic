@@ -36,7 +36,7 @@ export async function callWithTools(systemPrompt, messages, toolDeclarations = [
     tools: toolsObj.length > 0 ? toolsObj : undefined,
     generationConfig: {
       temperature:     0.7,
-      maxOutputTokens: toolDeclarations.length > 0 ? 2048 : 512,
+      maxOutputTokens: modelTier === 'reasoning' ? 4096 : 2048,
     },
   };
 

@@ -14,7 +14,7 @@
  */
 const GEMINI_API_KEY = import.meta.env?.VITE_GEMINI_API_KEY;
 const LLM_BACKEND = import.meta.env?.VITE_LLM_BACKEND || 'gemini'; // 'gemini' or 'ollama'
-const OLLAMA_BASE_URL = import.meta.env?.VITE_OLLAMA_URL || 'http://localhost:11434';
+const OLLAMA_BASE_URL = import.meta.env?.VITE_OLLAMA_URL || '/ollama';
 const OLLAMA_MODEL = import.meta.env?.VITE_OLLAMA_MODEL || 'llama3.1';
 
 const GEMINI_MODELS = {

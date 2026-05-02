@@ -189,8 +189,8 @@ export function renderPlaylistPage(container) {
       const context = await orchestrator.generatePlaylist('user_local', vibe);
       window.TG.lastContext = context;
       
-      // Save it to library
-      DataStore.saveGeneratedPlaylist(context);
+      // Save it to library (populates both playlist_library and legacy saved_playlists)
+      DataStore.saveToLibrary(context, vibe, 'manual');
       
       playlistView.render(context);
       generatorSection.style.display = 'none';

@@ -132,10 +132,14 @@ Analyze the tracks and the MusicBrainz data. Call the 'submit_explanations' tool
       console.warn("NarratorAgent: Gemini failed, returning basic explanations.", err);
     }
 
-    // Fallback if LLM fails
+    // Fallback if LLM fails — use Curator's reason if it's a real one, else a clean generic
     const fallbackMap = new Map();
+    const CURATOR_DEFAULT = 'Selected based on your taste profile.';
     for (const c of scoredPlaylist) {
-      fallbackMap.set(c.track.id, `Selected due to its strong ${c.dominantFactor} affinity with your profile.`);
+      const reason = (c.dominantFactor && c.dominantFactor !== CURATOR_DEFAULT)
+        ? c.dominantFactor
+        : `${c.artistName} fits the ${sessionIntent || 'session'} vibe — discovered via ${c.source || 'your taste graph'}.`;
+      fallbackMap.set(c.track.id, reason);
     }
     return {
       playlistTitle: context?.playlistName || 'Curated Mix',

@@ -145,9 +145,10 @@ async function init() {
     navigate();
   });
 
-  // Trigger reflection on tab close / page unload
+  // Trigger lightweight session save on tab close / page unload
+  // (does NOT fire LLM calls — browsers kill them on unload anyway)
   window.addEventListener('beforeunload', () => {
-    _triggerEndSession();
+    _triggerEndSessionLightweight();
   });
 
   // Set up memory extraction event
@@ -229,7 +230,7 @@ function showDJModal(adjustments, orchestrator) {
 
 /**
  * Collect Session DJ data and trigger the Reflection Agent (fire-and-forget).
- * Called on navigation and page unload.
+ * Called on in-app navigation (hashchange). Full reflection includes LLM calls.
  */
 function _triggerEndSession() {
   try {
@@ -259,4 +260,25 @@ function _triggerEndSession() {
   }
 }
 
+/**
+ * Lightweight session end for beforeunload — saves only computational data.
+ * Does NOT fire LLM calls (browsers kill them on unload anyway).
+ */
+function _triggerEndSessionLightweight() {
+  try {
+    const dj = window.TG?.dj;
+    if (!dj) return;
+
+    const hasData = dj.skipHistory.length > 0 || dj.listenHistory.length > 0;
+    if (!hasData) return;
+
+    // Persist session signals to DataStore so they survive across page loads
+    dj._persistSignals();
+    dj.reset();
+  } catch (e) {
+    // Never block unload
+  }
+}
+
 init();
+

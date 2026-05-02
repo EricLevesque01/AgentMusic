@@ -19,6 +19,7 @@ import { getArtistTopTracks, searchArtist, searchArtists } from '../../data/spot
 import { initSpotifyPlayer, playTrack, pauseTrack } from '../../data/spotify-player.js';
 import { callWithTools } from '../../data/gemini-api.js';
 import * as elo from '../../engine/elo.js';
+import { btInformationGain, BRADLEY_TERRY_THRESHOLD } from '../../engine/elo.js';
 
 const DEFAULT_ELO = 1500;
 const MIN_ROUNDS_TO_FINISH = 5;
@@ -307,36 +308,43 @@ export class TasteGame {
 
   /**
    * Calculate information-gain weight for an artist.
-   * Artists with many comparisons and predictable outcomes get lower weight.
-   * Returns 0-3 (pool entries): 3 = fresh/uncertain, 0 = fully settled.
    *
-   * IMPORTANT: settled artists HARD-return 0 — no probabilistic leakage.
-   * A settled artist can only appear as a calibration *opponent*, never as a
-   * free participant in the general pool.
+   * For calibrated artists (bt_sigma available): uses Bradley-Terry uncertainty.
+   *   High sigma = much to learn, high weight. Low sigma = settled, weight 0.
+   *   Research basis: "By representing preference as a distribution rather than a
+   *   single number, the model can more gracefully handle the multi-dimensional
+   *   nature of an artist's appeal."
+   *
+   * For cold-start artists (Elo only): uses entropy heuristic (original logic).
+   *
+   * Returns 0–3 pool entries. 0 = settled/ignored (never enters the pool).
    */
   _getInfoGainWeight(eloData) {
-    if (!eloData) return 3; // Never compared = maximum weight
-    
-    // If explicitly ignored ("Don't know this artist"), they are dead to us.
+    if (!eloData) return 3; // Never seen = maximum uncertainty
+
     if (eloData.ignored) return 0;
-    
-    // If skipped excessively, they are dead to us.
     if ((eloData.skips || 0) >= 3 && (eloData.comparison_count || 0) === 0) return 0;
-    
+
     const comps = eloData.comparison_count || 0;
     if (comps === 0) return 3;
 
-    // Hard-zero for settled artists — this is the primary fix for the
-    // "Jeff Buckley appearing every round" regression.
+    // Hard-zero for settled artists (prevents the same anchor every round)
     if (this._isSettled(eloData)) return 0;
 
+    // --- Bradley-Terry path (preferred once calibrated) ---
+    if (eloData.bt_sigma !== undefined && comps >= BRADLEY_TERRY_THRESHOLD) {
+      // bt_sigma starts at 1.5, decays with each comparison toward 0.1
+      // Map sigma range [0.1, 1.5] → weight [0, 3]
+      const sigmaMax = 1.5;
+      const sigmaMin = 0.1;
+      const normalized = Math.max(0, (eloData.bt_sigma - sigmaMin) / (sigmaMax - sigmaMin));
+      return Math.round(normalized * 3);
+    }
+
+    // --- Elo entropy heuristic (cold-start fallback) ---
     const wins = eloData.wins || 0;
     const winRate = wins / comps;
-    // Information entropy: most info when winRate ~ 0.5, least when near 0 or 1
     const entropy = -(winRate * Math.log2(winRate + 0.001) + (1 - winRate) * Math.log2(1 - winRate + 0.001));
-
-    // Decay curve: weight drops with comparison count, faster for predictable artists
-    // comps=0→3, comps=5→2, comps=10→1-2, comps=15+→0-1
     const decayFactor = Math.max(0, 1 - (comps / 20));
     const weight = Math.round(3 * decayFactor * (0.3 + 0.7 * entropy));
     return Math.max(0, Math.min(3, weight));
@@ -450,31 +458,30 @@ export class TasteGame {
   }
 
   _getClosestAnchor(targetId, knownRanked, eloRatings) {
-    const targetElo = eloRatings[targetId]?.rating || 1500;
-    
-    // Calculate distance for all valid anchors, applying three filters:
-    // 1. Never re-use an already-played matchup
-    // 2. Block settled top-tier anchors from facing far-away contenders (uninformative)
-    // 3. Cap per-session anchor appearances to prevent the same artist every round
+    const targetData = eloRatings[targetId];
+    const targetElo  = targetData?.rating || 1500;
+
     const candidates = [];
     for (const anchor of knownRanked) {
       if (anchor.id === targetId || this._hasPlayed(targetId, anchor.id, eloRatings)) continue;
-      
-      // Cap: don't reuse the same anchor more than MAX_ANCHOR_APPEARANCES times per session
       if ((this.anchorAppearances[anchor.id] || 0) >= this.MAX_ANCHOR_APPEARANCES) continue;
-      
+
       const anchorData = eloRatings[anchor.id];
-      const anchorElo = anchorData?.rating || 1500;
-      const diff = Math.abs(anchorElo - targetElo);
-      
-      // Block settled top-tier anchors unless the contender is genuinely close to their level
+      const anchorElo  = anchorData?.rating || 1500;
+      const diff       = Math.abs(anchorElo - targetElo);
+
       if (this._isSettled(anchorData) && anchorElo > 1650 && diff > 200) continue;
-      
-      candidates.push({ anchor, diff });
+
+      // Bradley-Terry information gain: prefer matchups where both artists are uncertain
+      // AND the match is predicted to be close (win prob ≈ 0.5).
+      // Falls back to Elo proximity when BT data is not yet available.
+      const btGain = (targetData?.bt_sigma !== undefined && anchorData?.bt_sigma !== undefined)
+        ? btInformationGain(targetData, anchorData)
+        : Math.max(0, 1 - diff / 400); // Elo proximity fallback
+
+      candidates.push({ anchor, diff, btGain });
     }
-    
-    // If no suitable anchor found (everyone is top-tier and out of range),
-    // fall back to mid-tier anchors rather than forcing the #1
+
     if (candidates.length === 0) {
       const midTier = knownRanked.filter(a => {
         const data = eloRatings[a.id];
@@ -485,18 +492,14 @@ export class TasteGame {
       if (midTier.length > 0) {
         return midTier[Math.floor(Math.random() * Math.min(3, midTier.length))];
       }
-      // True last resort: any available anchor
       const any = knownRanked.filter(a => a.id !== targetId && !this._hasPlayed(targetId, a.id, eloRatings));
       return any[0] || knownRanked[0];
     }
-    
-    // Sort by absolute distance and take the top 3 closest
-    candidates.sort((a, b) => a.diff - b.diff);
+
+    // Sort by BT information gain descending, break ties by Elo proximity
+    candidates.sort((a, b) => b.btGain - a.btGain || a.diff - b.diff);
     const poolSize = Math.min(3, candidates.length);
-    const topCandidates = candidates.slice(0, poolSize);
-    
-    // Pick one randomly from the pool to keep the game fresh!
-    return topCandidates[Math.floor(Math.random() * topCandidates.length)].anchor;
+    return candidates[Math.floor(Math.random() * poolSize)].anchor;
   }
 
   _hasPlayed(aId, bId, eloRatingsParam = null) {

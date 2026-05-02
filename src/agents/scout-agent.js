@@ -12,10 +12,24 @@
  *   Adventurous/discover → Hop-0 + Hop-1 + Hop-2 (deep exploration)
  */
 import { getSimilarArtists, getArtistTags } from '../data/lastfm-api.js';
-import { getArtistTopTracks, getRecommendations } from '../data/spotify-api.js';
+import { getRecommendations } from '../data/spotify-api.js';
+import {
+  resolveArtist,
+  getTopTracks,
+  resolveSpecificTracks,
+  searchByIntent,
+  resetResolverCaches,
+  isSpotifyDegraded,
+} from '../data/track-resolver.js';
 import { callWithTools } from '../data/gemini-api.js';
+import { runScoutWebSearch, isSearxngAvailable } from '../data/local-agent.js';
 import { DataStore } from '../data/data-store.js';
 import { buildSoulPrefix } from './soul.js';
+import { searchArtist as searchMbArtist, getArtistRelationships } from '../data/musicbrainz-api.js';
+import { UserModel } from './user-model.js';
+import { EmbeddingStore } from '../data/embedding-store.js';
+
+const LLM_BACKEND = import.meta.env?.VITE_LLM_BACKEND || 'gemini';
 
 export class ScoutAgent {
   /**
@@ -26,9 +40,13 @@ export class ScoutAgent {
    * @returns {Array} CandidatePool
    */
   async findCandidates(tasteState, sessionIntent, context = null, onThought = null) {
+    // Reset per-run caches so stale data doesn't bleed between pipeline runs
+    resetResolverCaches();
+
     if (onThought) onThought("Scout: Assessing session constraints and building retrieval plan...");
     const hopDepth  = this.determineHopDepth(sessionIntent, context);
     if (onThought) onThought(`Scout: Graph traversal depth set to Hop-${hopDepth}`);
+    if (isSpotifyDegraded() && onThought) onThought('Scout: ⚠ Spotify rate-limited — using Last.fm fallback for track data');
 
     const { artists, eloRatings } = tasteState;
 
@@ -52,23 +70,51 @@ export class ScoutAgent {
     const seenTrackIds  = new Set();
 
     // --- Intent Override: Multi-Source Agentic Search ---
+    let intentOverrideActive = false;
     if (sessionIntent) {
       await this._addIntentOverrideTracks(sessionIntent, tasteState, candidatePool, seenTrackIds, onThought);
+      // If the intent override produced a meaningful pool, it means the user asked
+      // for something specific (e.g. "check out Geese"). Don't dilute it with
+      // seed artist expansions — those will drown out the actual request.
+      if (candidatePool.length >= 5) {
+        intentOverrideActive = true;
+      }
     }
 
-    // --- Hop 0: Top tracks from top-Elo artists (incl. game discoveries) ---
-    await this._addHop0Tracks(seedArtists, candidatePool, seenTrackIds, eloRatings, onThought);
-
-    // --- Hop 1: Similar artists via Last.fm + Spotify recs ---
-    if (hopDepth >= 1) {
-      await this._addHop1Tracks(seedArtists, tasteState.topGenres, candidatePool, seenTrackIds, eloRatings, onThought);
+    // --- Web-Grounded Discovery: Search the real internet for topical connections ---
+    // Only run if the intent override didn't already produce a focused pool
+    if (!intentOverrideActive && seedArtists.length > 0) {
+      if (LLM_BACKEND === 'ollama') {
+        await this._searchWebLocalAgent(seedArtists, sessionIntent, tasteState, candidatePool, seenTrackIds, onThought);
+      } else {
+        await this._searchWebGemini(seedArtists, sessionIntent, tasteState, candidatePool, seenTrackIds, onThought);
+      }
     }
 
-    // --- Hop 2: Genre exploration — bias toward coverage gaps if available ---
-    if (hopDepth >= 2) {
-      const gapGenres = (context?.coverageGaps || []).map(g => g.genre);
-      const hop2Genres = gapGenres.length > 0 ? gapGenres : tasteState.topGenres;
-      await this._addHop2Tracks(hop2Genres, seedArtists, candidatePool, seenTrackIds, onThought);
+    // --- Seed artist expansions: SKIP when intent override is active ---
+    // When someone says "check out Geese", adding The Strokes' top tracks
+    // just guarantees the Curator picks what's familiar. The intent override
+    // already found the right tracks.
+    if (!intentOverrideActive) {
+      // --- MusicBrainz Relationship Expansion ---
+      if (hopDepth >= 1 && seedArtists.length > 0) {
+        await this._addRelationshipTracks(seedArtists.slice(0, 3), candidatePool, seenTrackIds, onThought);
+      }
+
+      // --- Hop 0: Top tracks from top-Elo artists ---
+      await this._addHop0Tracks(seedArtists, candidatePool, seenTrackIds, eloRatings, onThought);
+
+      // --- Hop 1: Similar artists via Last.fm + Spotify recs ---
+      if (hopDepth >= 1) {
+        await this._addHop1Tracks(seedArtists, tasteState.topGenres, candidatePool, seenTrackIds, eloRatings, onThought);
+      }
+
+      // --- Hop 2: Genre exploration ---
+      if (hopDepth >= 2) {
+        const gapGenres = (context?.coverageGaps || []).map(g => g.genre);
+        const hop2Genres = gapGenres.length > 0 ? gapGenres : tasteState.topGenres;
+        await this._addHop2Tracks(hop2Genres, seedArtists, candidatePool, seenTrackIds, onThought);
+      }
     }
 
     // Enrich all candidates with Last.fm tags
@@ -95,6 +141,13 @@ export class ScoutAgent {
     if (context?.blackboard) {
       const hop0Artists = candidatePool.filter(c => (c.hopDistance || 0) === 0).map(c => c.artistName);
       const hop2Artists = candidatePool.filter(c => (c.hopDistance || 0) >= 2).map(c => c.artistName);
+
+      // Source breakdown: tells the Curator exactly how this pool was assembled
+      const sourceBreakdown = {};
+      for (const c of candidatePool) {
+        sourceBreakdown[c.source] = (sourceBreakdown[c.source] || 0) + 1;
+      }
+
       context.blackboard.scout = {
         searchStrategy: `Hop depth ${hopDepth}. ${candidatePool.length} candidates sourced from ${new Set(candidatePool.map(c => c.source)).size} sources.`,
         totalCandidates: candidatePool.length,
@@ -102,6 +155,9 @@ export class ScoutAgent {
         highConfidence: [...new Set(hop0Artists)].slice(0, 5),
         riskyBets: [...new Set(hop2Artists)].slice(0, 5),
         gaps: (context.coverageGaps || []).map(g => g.genre),
+        sourceBreakdown,
+        usedAgenticRetrieval: (sourceBreakdown['llm_specific'] || 0) + (sourceBreakdown['intent_search'] || 0) > 0,
+        spotifyDegraded: isSpotifyDegraded(),
       };
     }
 
@@ -142,41 +198,82 @@ export class ScoutAgent {
     const topGenres = tasteState.topGenres || [];
     const topArtistNames = (tasteState.topRankedArtists || []).slice(0, 5).map(a => a.name);
 
-    // Step 1: Ask the LLM for a structured retrieval plan (single call, no multi-turn)
+    // Step 1: Ask the LLM for a structured retrieval plan.
+    // Feed it the full taste context so it can be strategic, not generic.
+    let tasteContext = '';
+    try {
+      const tier1 = UserModel.loadTier1();
+      const dims = tier1?.tasteProfile?.musicDimensions;
+      if (dims && dims._confidence > 0) {
+        const sorted = Object.entries(dims)
+          .filter(([k]) => k !== '_confidence')
+          .sort((a, b) => b[1] - a[1]);
+        tasteContext = `\nUser's MUSIC personality: ${sorted.map(([k, v]) => `${k}: ${(v * 100).toFixed(0)}%`).join(', ')}`;
+      }
+    } catch (e) {}
+
     const prompt = `${buildSoulPrefix()}
 
-You are acting as the Scout — a music discovery agent. Given the user's session intent, generate a retrieval plan of SPECIFIC, REAL artists to look up.
+You are the Scout — a music discovery agent. Given the session intent, decide:
+1. WHAT to search for (specific artists, albums, tracks)
+2. WHERE to look (which sources matter for this intent)
+3. WHY these choices serve the intent
 
 Session intent: "${sessionIntent}"
 User's top genres: ${topGenres.join(', ')}
-User's top artists: ${topArtistNames.join(', ')}
+User's top artists: ${topArtistNames.join(', ')}${tasteContext}
 ${(() => { const prefs = DataStore.getExplicitPreferences(); const mems = prefs.agent_memories || []; return mems.length > 0 ? `\nPERMANENT USER NOTES:\n${mems.map(m => '- ' + m).join('\n')}` : ''; })()}
 
-You MUST call the 'submit_retrieval_plan' tool with your plan.
+Think about what kind of request this is and adapt your retrieval strategy.
+You have THREE ways to find tracks — use whichever combination best serves the intent:
 
-RULES:
-- For genre exploration (e.g. "explore jazz"): Name 10-15 SPECIFIC canonical artists spanning different eras and sub-styles. Use your deep music knowledge. For Jazz, don't just say "Miles Davis" — also include Thelonious Monk, John Coltrane, Bill Evans, Charles Mingus, Herbie Hancock, Wayne Shorter, etc.
-- For artist-specific requests: Name the requested artist plus 3-5 similar artists.
-- For mood/vibe requests: Name 8-10 artists that match the mood from the user's taste neighborhood.
-- If the intent is generic (e.g. "play my favorites"): Return an empty artists array.
-- Only name REAL, established, acclaimed artists. Never invent fake names.
-- Also provide 1-2 "seed" artist names for Last.fm similar-artist graph expansion.`;
+1. **artists** — Artist names for top-tracks lookup. Good for broad discovery.
+2. **specificTracks** — Exact track names YOU choose from your knowledge of the artist's catalog. Use this for mood-specific, thematic, or deep-cut requests where top tracks won't reach the right songs. Example: for "Beatles love songs", don't just list The Beatles — specify "Till There Was You", "I Will", "Something", "Here, There and Everywhere".
+3. **searchQueries** — Spotify search queries for intent-filtered discovery. Use field filters like artist:"Name" plus mood/theme keywords. Example: 'artist:"Miles Davis" ballad', 'genre:shoegaze dreamy'.
+
+When to use each:
+- **Genre exploration** ("explore jazz"): Use 'artists' with 10-15 canonical names spanning eras.
+- **Artist focus** ("check out Geese"): Use 'artists' with the target first + related artists. Consider adding 'specificTracks' if you know standout tracks.
+- **Mood/theme** ("Beatles love songs", "late night drive"): PREFER 'specificTracks' and 'searchQueries' — top tracks are too generic for mood-specific requests. Name the exact songs that fit the mood.
+- **Deep dive** ("deep cuts from Radiohead"): Use 'specificTracks' exclusively — name lesser-known gems, not the hits.
+- **Generic** ("play my favorites"): Return empty artists list — let the graph traversal handle it.
+
+Also provide 1-2 "seed" artists for Last.fm graph expansion — slightly outside the user's core.
+
+You MUST call the 'submit_retrieval_plan' tool.`;
 
     const toolDecls = [{
       name: 'submit_retrieval_plan',
-      description: 'Submit the structured retrieval plan with specific artist names to look up.',
+      description: 'Submit the structured retrieval plan. Use specificTracks for mood/theme requests where top tracks would be too generic.',
       parameters: {
         type: 'object',
         properties: {
           artists: {
             type: 'array',
             items: { type: 'string' },
-            description: 'List of specific artist names to look up on Spotify (e.g. ["Miles Davis", "John Coltrane", "Thelonious Monk"])'
+            description: 'Artist names for top-tracks lookup (e.g. ["Miles Davis", "John Coltrane"])'
+          },
+          specificTracks: {
+            type: 'array',
+            items: {
+              type: 'object',
+              properties: {
+                trackName: { type: 'string', description: 'Exact track name' },
+                artistName: { type: 'string', description: 'Artist who performs it' }
+              },
+              required: ['trackName', 'artistName']
+            },
+            description: 'Specific tracks chosen by you for this intent. Use for deep cuts, mood-specific songs, or thematic requests.'
+          },
+          searchQueries: {
+            type: 'array',
+            items: { type: 'string' },
+            description: 'Spotify search queries with field filters (e.g. ["artist:\\"The Beatles\\" love ballad", "genre:bossa nova mellow"])'
           },
           lastfmSeeds: {
             type: 'array',
             items: { type: 'string' },
-            description: '1-2 canonical artist names to use as seeds for Last.fm similar-artist expansion'
+            description: '1-2 canonical artist names for Last.fm similar-artist expansion'
           },
           reasoning: {
             type: 'string',
@@ -188,14 +285,25 @@ RULES:
     }];
 
     let artistsToLookup = [];
+    let specificTracks = [];
+    let searchQueries = [];
     let lastfmSeeds = [];
 
     try {
-      const result = await callWithTools(prompt, [{ role: 'user', parts: [{ text: 'Generate the retrieval plan.' }] }], toolDecls);
+      const result = await callWithTools(
+        prompt,
+        [{ role: 'user', parts: [{ text: 'Generate the retrieval plan.' }] }],
+        toolDecls,
+        'fast',
+        false,
+        'scout'   // Route to qwen3:8b for local
+      );
       const planCall = result.functionCalls.find(fc => fc.name === 'submit_retrieval_plan');
 
       if (planCall?.args) {
         artistsToLookup = planCall.args.artists || [];
+        specificTracks = planCall.args.specificTracks || [];
+        searchQueries = planCall.args.searchQueries || [];
         lastfmSeeds = planCall.args.lastfmSeeds || [];
         if (planCall.args.reasoning && onThought) {
           onThought(`Scout strategy: ${planCall.args.reasoning}`);
@@ -205,10 +313,53 @@ RULES:
       console.warn("Scout: LLM retrieval plan failed:", err.message);
     }
 
-    // If the LLM didn't give us artists (generic intent or failure), skip
-    if (artistsToLookup.length === 0 && lastfmSeeds.length === 0) return;
+    // If the LLM gave us nothing (generic intent or failure), skip
+    if (artistsToLookup.length === 0 && specificTracks.length === 0 && searchQueries.length === 0 && lastfmSeeds.length === 0) return;
 
-    // Step 2: Expand via Last.fm similar-artist graph
+    // --- Agentic Track Resolution: specific tracks chosen by the LLM ---
+    if (specificTracks.length > 0) {
+      if (onThought) onThought(`Scout: Resolving ${specificTracks.length} LLM-chosen tracks...`);
+      const resolved = await resolveSpecificTracks(specificTracks);
+      for (const track of resolved) {
+        if (track && !seen.has(track.id)) {
+          seen.add(track.id);
+          pool.push({
+            track,
+            artistName: track.artists?.[0]?.name || '',
+            artistId: track.artists?.[0]?.id || '',
+            source: 'llm_specific',
+            hopDistance: 0,
+            eloScore: 1900, // High priority — the LLM hand-picked these
+            tags: [],
+          });
+        }
+      }
+      if (onThought) onThought(`Scout: Resolved ${resolved.length} specific tracks`);
+    }
+
+    // --- Agentic Track Resolution: intent-filtered search queries ---
+    if (searchQueries.length > 0) {
+      if (onThought) onThought(`Scout: Running ${searchQueries.length} intent-filtered searches...`);
+      for (const query of searchQueries.slice(0, 5)) {
+        const tracks = await searchByIntent(query, 5);
+        for (const track of tracks) {
+          if (track && !seen.has(track.id)) {
+            seen.add(track.id);
+            pool.push({
+              track,
+              artistName: track.artists?.[0]?.name || '',
+              artistId: track.artists?.[0]?.id || '',
+              source: 'intent_search',
+              hopDistance: 0,
+              eloScore: 1800,
+              tags: [],
+            });
+          }
+        }
+      }
+    }
+
+    // --- Last.fm graph expansion ---
     if (lastfmSeeds.length > 0) {
       for (const seed of lastfmSeeds.slice(0, 2)) {
         if (onThought) onThought(`Scout: Expanding from "${seed}" via Last.fm graph...`);
@@ -225,44 +376,47 @@ RULES:
       }
     }
 
-    // Step 3: Look up each artist's top tracks on Spotify
-    if (onThought) onThought(`Scout: Looking up ${artistsToLookup.length} artists across Spotify...`);
-    const { searchArtists: searchSpotifyArtists } = await import('../data/spotify-api.js');
+    // --- Artist-level top-tracks lookup (via resilient resolver) ---
+    if (artistsToLookup.length > 0) {
+      if (onThought) onThought(`Scout: Looking up ${artistsToLookup.length} artists via resolver...`);
 
-    // Process in parallel batches of 5 to balance speed vs rate limiting
-    const batchSize = 5;
-    for (let i = 0; i < artistsToLookup.length; i += batchSize) {
-      const batch = artistsToLookup.slice(i, i + batchSize);
-      const lookups = batch.map(async (artistName) => {
-        try {
-          const artists = await searchSpotifyArtists(artistName, 1);
-          if (!artists || artists.length === 0) return;
-          const artist = artists[0];
+      // Process in parallel batches of 5 to balance speed vs rate limiting
+      const batchSize = 5;
+      for (let i = 0; i < artistsToLookup.length; i += batchSize) {
+        const batch = artistsToLookup.slice(i, i + batchSize);
+        const lookups = batch.map(async (artistName) => {
+          try {
+            const artist = await resolveArtist(artistName);
+            if (!artist) return;
 
-          const tracks = await getArtistTopTracks(artist.id);
-          // Take top 3 tracks per artist for diversity
-          for (const track of tracks.slice(0, 3)) {
-            if (!seen.has(track.id)) {
-              seen.add(track.id);
-              pool.push({
-                track,
-                artistName: artist.name,
-                artistId: artist.id,
-                source: 'intent_override',
-                hopDistance: 0,
-                eloScore: 1800,
-                tags: [],
-              });
+            const tracks = await getTopTracks(artist.id, artist.name);
+            // Primary artist (first in list) gets up to 10 tracks;
+            // supporting artists get 2-3 for context.
+            const artistIndex = artistsToLookup.indexOf(artistName);
+            const trackLimit = artistIndex === 0 ? 10 : 3;
+            for (const track of tracks.slice(0, trackLimit)) {
+              if (!seen.has(track.id)) {
+                seen.add(track.id);
+                pool.push({
+                  track,
+                  artistName: artist.name,
+                  artistId: artist.id,
+                  source: 'intent_override',
+                  hopDistance: 0,
+                  eloScore: artistIndex === 0 ? 2000 : 1800,
+                  tags: [],
+                });
+              }
             }
+          } catch (err) {
+            console.warn(`Scout: Lookup failed for "${artistName}":`, err.message);
           }
-        } catch (err) {
-          console.warn(`Scout: Lookup failed for "${artistName}":`, err.message);
-        }
-      });
-      await Promise.all(lookups);
+        });
+        await Promise.all(lookups);
+      }
     }
 
-    if (onThought) onThought(`Scout: Intent override sourced ${pool.length} candidates from ${artistsToLookup.length} artists`);
+    if (onThought) onThought(`Scout: Intent override sourced ${pool.length} candidates from ${artistsToLookup.length} artists, ${specificTracks.length} specific tracks, ${searchQueries.length} search queries`);
   }
 
   // --- Private: Hop 0 ---
@@ -270,7 +424,7 @@ RULES:
     if (onThought && seedArtists.length > 0) onThought(`Scout: Expanding candidate pool from known core artists (Hop-0)...`);
     for (const artist of seedArtists) {
       try {
-        const tracks = await getArtistTopTracks(artist.id);
+        const tracks = await getTopTracks(artist.id, artist.name);
         for (const track of tracks.slice(0, 3)) {
           if (!seen.has(track.id)) {
             seen.add(track.id);
@@ -293,14 +447,39 @@ RULES:
 
   // --- Private: Hop 1 ---
   async _addHop1Tracks(seedArtists, topGenres, pool, seen, eloRatings, onThought) {
-    if (onThought) onThought(`Scout: Pulling adjacent artists from Last.fm graph (Hop-1)...`);
-    // Collect similar artists from Last.fm for top 3 seeds
+    // Collect similar artists — strategy depends on LLM backend:
+    //   Ollama path: use local cosine embeddings (EmbeddingStore) — no API call needed
+    //   Gemini path: use Last.fm similar artists API (unchanged)
     const similarArtistNames = new Set();
+    const eloIds = new Set(Object.keys(eloRatings));
 
-    for (const seed of seedArtists.slice(0, 3)) {
-      const similar = await getSimilarArtists(seed.name, 10);
-      for (const a of similar) {
-        similarArtistNames.add(a.name);
+    if (LLM_BACKEND === 'ollama' && EmbeddingStore.isReady) {
+      if (onThought) onThought('Scout: Finding similar artists via local embeddings (Hop-1)...');
+      // For each seed, find the top-8 most semantically similar artists by cosine distance
+      for (const seed of seedArtists.slice(0, 3)) {
+        try {
+          const results = await EmbeddingStore.findSimilarToArtist(
+            seed.id,
+            8,
+            seedArtists.map(a => a.id) // Exclude seeds from results
+          );
+          for (const r of results) {
+            if (r.score > 0.6) { // Only high-confidence matches
+              similarArtistNames.add(r.name);
+            }
+          }
+        } catch (err) {
+          console.debug('Scout: Embedding similarity failed for', seed.name, err.message);
+        }
+      }
+    } else {
+      if (onThought) onThought('Scout: Pulling adjacent artists from Last.fm graph (Hop-1)...');
+      // Last.fm path (Gemini mode or embedding store not yet ready)
+      for (const seed of seedArtists.slice(0, 3)) {
+        const similar = await getSimilarArtists(seed.name, 10);
+        for (const a of similar) {
+          similarArtistNames.add(a.name);
+        }
       }
     }
 
@@ -318,14 +497,14 @@ RULES:
       for (const track of recTracks) {
         if (!seen.has(track.id)) {
           seen.add(track.id);
-          // Check if this track's artist was among the Last.fm similar results
           const artistName = track.artists?.[0]?.name || '';
-          const isLastfm   = similarArtistNames.has(artistName);
+          const isEmbedding = LLM_BACKEND === 'ollama' && EmbeddingStore.isReady;
+          const isMatch     = similarArtistNames.has(artistName);
           pool.push({
             track,
             artistName,
             artistId:    track.artists?.[0]?.id || '',
-            source:      isLastfm ? 'graph_hop' : 'spotify_rec',
+            source:      isMatch ? (isEmbedding ? 'embedding_hop' : 'graph_hop') : 'spotify_rec',
             hopDistance: 1,
             eloScore:    1500, // unknown artist
             tags:        [],
@@ -368,14 +547,319 @@ RULES:
     }
   }
 
+  // --- Private: Web-Grounded Discovery — Gemini (Google Search grounding) ---
+  // Two-phase approach:
+  //   Phase 1: google_search grounding (text-only, no function calling) — gets real web data
+  //   Phase 2: fast LLM call — extracts artist names from the grounded research
+  async _searchWebGemini(seedArtists, sessionIntent, tasteState, pool, seen, onThought) {
+    const topNames = seedArtists.slice(0, 5).map(a => a.name);
+    if (topNames.length === 0) return;
+
+    if (onThought) onThought('Scout: Researching music sources online…');
+
+    let userContext = '';
+    try { userContext = UserModel.buildScoutContext(); } catch (e) {}
+
+    // --- Phase 1: Web Research ---
+    // Use google_search grounding with NO tool declarations (avoids the API conflict).
+    // Formulate the query like a real music researcher would.
+    const intent = sessionIntent || 'general discovery';
+    const genres = (tasteState.topGenres || []).slice(0, 4).join(', ');
+
+    const researchPrompt = `${buildSoulPrefix()}
+
+You are a music researcher. Search for specific, real artist and album recommendations.
+
+User's context:
+- Favorite artists: ${topNames.join(', ')}
+- Genres: ${genres}
+- What they're looking for: "${intent}"
+${userContext}
+
+Search for recommendations from these kinds of sources:
+- Reddit threads (r/ifyoulikeblank, r/listentothis, r/indieheads)
+- Music criticism (Pitchfork, The Quietus, Stereogum reviews)
+- Rate Your Music lists and charts
+- "If you like X, try Y" recommendations
+- Recent album reviews and year-end lists
+- Forum discussions about these specific artists
+
+Be specific. Name real artists, real albums, real songs. Cite where you found them if possible.
+Focus on artists the user probably hasn't heard — avoid the most obvious picks.`;
+
+    let webResearchText = '';
+    try {
+      // google_search grounding + empty tool declarations = no conflict
+      const researchResult = await callWithTools(
+        researchPrompt,
+        [{ role: 'user', parts: [{ text: `Find music recommendations for someone who loves ${topNames.slice(0, 3).join(', ')} and wants: "${intent}"` }] }],
+        [],          // No function calling — pure text + grounding
+        'fast',
+        true,        // google_search grounding ENABLED
+        'scout'
+      );
+      webResearchText = researchResult.textReply || '';
+    } catch (err) {
+      console.warn('Scout: Web research grounding failed:', err.message);
+      return;
+    }
+
+    if (!webResearchText || webResearchText.length < 50) return;
+
+    // --- Phase 2: Extract artist names from the research ---
+    // A fast LLM call to parse the unstructured web research into structured data.
+    const extractPrompt = `Extract artist names from this music research. Return ONLY a JSON array of objects.
+
+Research text:
+${webResearchText.slice(0, 3000)}
+
+Rules:
+- Only include REAL artists that would have a Spotify page
+- Skip the user's known artists: ${topNames.join(', ')}
+- Include a brief reason for each (from the research context)
+- Maximum 10 artists
+
+Return format: [{"name": "Artist Name", "reason": "brief reason from research"}]
+Return ONLY the JSON array.`;
+
+    let webArtists = [];
+    try {
+      const extractResult = await callWithTools(
+        extractPrompt,
+        [{ role: 'user', parts: [{ text: 'Extract the artist names.' }] }],
+        [],
+        'fast',
+        false,
+        'scout'
+      );
+
+      const jsonMatch = (extractResult.textReply || '').match(/\[[\s\S]*\]/);
+      if (jsonMatch) {
+        webArtists = JSON.parse(jsonMatch[0]);
+      }
+    } catch (err) {
+      console.warn('Scout: Artist extraction failed:', err.message);
+      return;
+    }
+
+    if (webArtists.length === 0) return;
+
+    if (onThought) onThought(`Scout strategy: Found ${webArtists.length} artists from music press, forums, and critic reviews`);
+
+    // --- Phase 3: Validate against Spotify and add to pool ---
+    for (const wa of webArtists.slice(0, 8)) {
+      try {
+        const artist = await resolveArtist(wa.name);
+        if (!artist) continue;
+
+        // Loose name validation — skip clear mismatches
+        if (artist.name.toLowerCase() !== wa.name.toLowerCase() &&
+            !artist.name.toLowerCase().includes(wa.name.toLowerCase()) &&
+            !wa.name.toLowerCase().includes(artist.name.toLowerCase())) continue;
+
+        const tracks = await getTopTracks(artist.id, artist.name);
+        for (const track of tracks.slice(0, 2)) {
+          if (!seen.has(track.id)) {
+            seen.add(track.id);
+            pool.push({
+              track,
+              artistName: artist.name,
+              artistId:   artist.id,
+              source:     'web_discovery',
+              hopDistance: 1,
+              eloScore:   1600,
+              tags:       [],
+              connectionReason: wa.reason,
+            });
+          }
+        }
+      } catch (err) {
+        console.warn(`Scout: Web discovery lookup failed for "${wa.name}":`, err.message);
+      }
+    }
+  }
+
+  // --- Private: Web-Grounded Discovery — Ollama + SearXNG (local, zero-cost) ---
+  async _searchWebLocalAgent(seedArtists, sessionIntent, tasteState, pool, seen, onThought) {
+    const topNames = seedArtists.slice(0, 4).map(a => a.name);
+    if (topNames.length === 0) return;
+
+    const searxngUp = await isSearxngAvailable();
+    if (!searxngUp) {
+      if (onThought) onThought('Scout: SearXNG not available — skipping local web search (start with: docker run -d -p 8080:8080 searxng/searxng)');
+      return;
+    }
+
+    if (onThought) onThought('Scout: Searching the internet via local SearXNG + Ollama ReAct loop...');
+
+    try {
+      const { content } = await runScoutWebSearch(seedArtists, sessionIntent, onThought);
+
+      // Parse LLM output: "Artist Name — Reason" or "1. Artist Name — Reason"
+      const lines = content.split('\n').filter(l => l.trim().length > 10);
+      const webArtists = [];
+
+      for (const line of lines) {
+        const match = line.match(/^\d*\.?\s*(.+?)\s+[—–-]+\s+(.+)$/);
+        if (match) {
+          const name   = match[1].replace(/\*+/g, '').trim();
+          const reason = match[2].trim();
+          if (name && reason && name.length < 60) {
+            webArtists.push({ name, reason });
+          }
+        }
+      }
+
+      if (webArtists.length === 0) {
+        if (onThought) onThought('Scout: Local web search completed but could not parse artist list');
+        return;
+      }
+
+      if (onThought) onThought(`Scout: Local web search found ${webArtists.length} artists via SearXNG`);
+
+      for (const wa of webArtists.slice(0, 8)) {
+        try {
+          const artist = await resolveArtist(wa.name);
+          if (!artist) continue;
+
+          const tracks = await getTopTracks(artist.id, artist.name);
+          for (const track of tracks.slice(0, 2)) {
+            if (!seen.has(track.id)) {
+              seen.add(track.id);
+              pool.push({
+                track,
+                artistName: artist.name,
+                artistId:   artist.id,
+                source:     'web_discovery_local',
+                hopDistance: 1,
+                eloScore:   1600,
+                tags:       [],
+                connectionReason: wa.reason,
+              });
+            }
+          }
+        } catch (err) {
+          console.warn(`Scout: Local web lookup failed for "${wa.name}":`, err.message);
+        }
+      }
+
+      const webCount = pool.filter(c => c.source === 'web_discovery_local').length;
+      if (onThought) onThought(`Scout: Local web-grounded discovery added ${webCount} candidates`);
+
+    } catch (err) {
+      console.warn('Scout: Local web discovery failed (continuing):', err.message);
+    }
+  }
+
+  // --- Private: MusicBrainz Relationship Expansion (Phase 6.1) ---
+
+  // Finds artists connected through band membership, collaboration, etc.
+  async _addRelationshipTracks(seedArtists, pool, seen, onThought) {
+    if (onThought) onThought('Scout: Checking MusicBrainz for structural connections (shared bands, collaborators)...');
+
+    const relatedArtists = new Map(); // name → connectionReason
+
+    for (const seed of seedArtists) {
+      try {
+        const mbid = await searchMbArtist(seed.name);
+        if (!mbid) continue;
+
+        const rels = await getArtistRelationships(mbid);
+        for (const rel of rels.slice(0, 5)) {
+          if (rel.targetName && !relatedArtists.has(rel.targetName)) {
+            const reason = this._formatRelationshipReason(rel, seed.name);
+            relatedArtists.set(rel.targetName, reason);
+          }
+        }
+      } catch (err) {
+        console.warn(`Scout: MB relationship lookup failed for "${seed.name}":`, err.message);
+      }
+    }
+
+    if (relatedArtists.size === 0) return;
+    if (onThought) onThought(`Scout: Found ${relatedArtists.size} structurally connected artists`);
+
+    // Resolve top results to Spotify tracks
+    let added = 0;
+
+    for (const [name, reason] of [...relatedArtists.entries()].slice(0, 6)) {
+      try {
+        const artist = await resolveArtist(name);
+        if (!artist) continue;
+
+        const tracks = await getTopTracks(artist.id, artist.name);
+        for (const track of tracks.slice(0, 2)) {
+          if (!seen.has(track.id)) {
+            seen.add(track.id);
+            pool.push({
+              track,
+              artistName: artist.name,
+              artistId: artist.id,
+              source: 'relationship_graph',
+              hopDistance: 1,
+              eloScore: 1550,
+              tags: [],
+              connectionReason: reason,
+            });
+            added++;
+          }
+        }
+      } catch (err) {
+        console.warn(`Scout: Relationship track lookup failed for "${name}":`, err.message);
+      }
+    }
+
+    if (onThought && added > 0) onThought(`Scout: Added ${added} tracks from structural connections`);
+  }
+
+  /**
+   * Format a MusicBrainz relationship into a human-readable connection reason.
+   */
+  _formatRelationshipReason(rel, seedName) {
+    switch (rel.type) {
+      case 'member of band':
+        return rel.direction === 'backward'
+          ? `Member of ${seedName}`
+          : `${seedName} was a member of ${rel.targetName}`;
+      case 'collaboration':
+        return `Collaborated with ${seedName}`;
+      case 'supporting musician':
+      case 'vocal supporting musician':
+      case 'instrumental supporting musician':
+        return rel.direction === 'backward'
+          ? `Session/touring musician for ${seedName}`
+          : `${seedName} performed with ${rel.targetName}`;
+      case 'founder':
+        return `Founded by a member of ${seedName}`;
+      case 'subgroup':
+        return `Side project of ${seedName}`;
+      case 'teacher':
+        return rel.direction === 'backward'
+          ? `Studied under ${seedName}`
+          : `Taught by ${rel.targetName}`;
+      default:
+        return `Connected to ${seedName}`;
+    }
+  }
+
   // --- Private: Enrich with Last.fm tags ---
   async _enrichWithTags(pool) {
     // Group by artist to minimize API calls
     const artistsToFetch = [...new Set(pool.map(c => c.artistName))].slice(0, 20);
 
     const tagMap = {};
-    for (const name of artistsToFetch) {
-      tagMap[name] = await getArtistTags(name);
+    // Fetch in parallel batches of 5 to avoid overwhelming Last.fm
+    const batchSize = 5;
+    for (let i = 0; i < artistsToFetch.length; i += batchSize) {
+      const batch = artistsToFetch.slice(i, i + batchSize);
+      const results = await Promise.allSettled(
+        batch.map(async name => ({ name, tags: await getArtistTags(name) }))
+      );
+      for (const r of results) {
+        if (r.status === 'fulfilled') {
+          tagMap[r.value.name] = r.value.tags;
+        }
+      }
     }
 
     for (const candidate of pool) {

@@ -128,13 +128,24 @@ export class Orchestrator {
 
     // --- Stage 4: Narrator — reads context for personalized copy ---
     this._reportStatus('narrator');
-    context.explanations = await this.narrator.generate(
-      context.scoredPlaylist,
-      context.tasteState,
-      context.sessionIntent,
-      context,
-      this._reportThought.bind(this)
-    );
+
+    // Guard: If curator produced an empty playlist, skip narration gracefully
+    if (!context.scoredPlaylist || context.scoredPlaylist.length === 0) {
+      this._reportThought('Narrator: No tracks to narrate — curator returned an empty playlist.');
+      context.explanations = {
+        playlistTitle: 'No Results',
+        playlistSummary: 'The curator could not find tracks matching your request. Try broadening your description.',
+        trackExplanations: new Map(),
+      };
+    } else {
+      context.explanations = await this.narrator.generate(
+        context.scoredPlaylist,
+        context.tasteState,
+        context.sessionIntent,
+        context,
+        this._reportThought.bind(this)
+      );
+    }
 
     this._reportStatus('narrator', true); // Done
     this._lastContext = context;
@@ -242,6 +253,20 @@ export class Orchestrator {
         if (tasteState) {
           const result = await this.narrator.generateAgenticProfile(tasteState);
           return { ...(this._lastContext || {}), tasteSummary: result };
+        }
+        break;
+      }
+
+      case 'taste_evolution': {
+        // Surface cross-session taste evolution insights
+        // The Concierge agent synthesizes drift trends + episodic memory
+        try {
+          const { ConciergeAgent } = await import('./concierge-agent.js');
+          const concierge = new ConciergeAgent();
+          const summary = concierge.buildTasteEvolutionSummary();
+          return { ...(this._lastContext || {}), tasteEvolution: summary };
+        } catch (e) {
+          console.warn('Orchestrator: Taste evolution summary failed:', e.message);
         }
         break;
       }

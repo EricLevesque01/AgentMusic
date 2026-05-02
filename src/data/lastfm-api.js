@@ -92,3 +92,39 @@ export async function getArtistTags(artistName) {
     return [];
   }
 }
+
+/**
+ * Get top tracks for an artist from Last.fm (crowdsourced play counts).
+ * Returns track names + play stats — NOT playable Spotify objects.
+ * Used as a fallback when Spotify's top-tracks endpoint is rate-limited.
+ * @param {string} artistName
+ * @param {number} limit
+ * @returns {Array<{ name, playcount, listeners, artistName }>}
+ */
+export async function getArtistTopTracksLastfm(artistName, limit = 10) {
+  const cacheKey = `lastfm_toptracks_${artistName.toLowerCase().replace(/\s+/g, '_')}`;
+  const cached = DataStore.getCachedResponse(cacheKey);
+  if (cached) return cached;
+
+  try {
+    const data = await lastfmFetch({
+      method: 'artist.getTopTracks',
+      artist: artistName,
+      limit: String(limit),
+      autocorrect: '1',
+    });
+
+    const tracks = (data.toptracks?.track || []).map(t => ({
+      name: t.name,
+      playcount: parseInt(t.playcount, 10) || 0,
+      listeners: parseInt(t.listeners, 10) || 0,
+      artistName: t.artist?.name || artistName,
+    }));
+
+    DataStore.cacheResponse(cacheKey, tracks);
+    return tracks;
+  } catch (err) {
+    console.warn(`Last.fm: getArtistTopTracks failed for "${artistName}":`, err.message);
+    return [];
+  }
+}

@@ -89,6 +89,10 @@ export class PipelineContext {
         playlistTitle: '',        // the creative title
         sophisticationLevel: '',  // what explanation depth was used
       },
+      concierge: {
+        tasteEvolution: '',       // cross-session taste evolution narrative
+        proactiveInsights: [],    // hints the Concierge can volunteer
+      },
     };
   }
 
@@ -119,7 +123,7 @@ export class PipelineContext {
         if (!this.candidatePool.length) throw new Error('PipelineContext: candidatePool is required for curator stage');
         return true;
       case 'narrator':
-        if (!this.scoredPlaylist.length) throw new Error('PipelineContext: scoredPlaylist is required for narrator stage');
+        if (!this.scoredPlaylist || this.scoredPlaylist.length === 0) throw new Error('PipelineContext: non-empty scoredPlaylist is required for narrator stage');
         return true;
       default:
         return true;

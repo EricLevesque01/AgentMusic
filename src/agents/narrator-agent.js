@@ -105,7 +105,14 @@ Analyze the tracks and the MusicBrainz data. Call the 'submit_explanations' tool
     }];
 
     try {
-      const result = await callWithTools(systemPrompt, [{ role: 'user', parts: [{ text: 'Generate the playlist narrative.' }] }], toolDeclarations);
+      const result = await callWithTools(
+        systemPrompt,
+        [{ role: 'user', parts: [{ text: 'Generate the playlist narrative.' }] }],
+        toolDeclarations,
+        'fast',
+        false,
+        'narrator'
+      );
       const submitCall = result.functionCalls.find(fc => fc.name === 'submit_explanations');
       
       if (submitCall && submitCall.args) {
@@ -183,7 +190,15 @@ CRITICAL RULES:
 6. Do not use markdown, just write the plain text paragraphs.`;
 
     try {
-      const result = await callWithTools(prompt, [{ role: 'user', parts: [{text: 'Analyze my taste identity.'}] }], [], 'reasoning');
+      const result = await callWithTools(
+        prompt,
+        [{ role: 'user', parts: [{ text: 'Analyze my taste identity.' }] }],
+        [],
+        'reasoning',
+        false,
+        'narrator'
+      );
+
       if (result.textReply) {
         return result.textReply.trim();
       }

@@ -20,6 +20,14 @@ import {
   computeSpecialistIndex,
   computeDiversityScore,
 } from '../data/music-dimensions.js';
+import {
+  updateBradleyTerry,
+  initBradleyTerry,
+  btStrengthToRating,
+  getModelForArtist,
+  BRADLEY_TERRY_THRESHOLD,
+} from '../engine/elo.js';
+import { EmbeddingStore } from '../data/embedding-store.js';
 
 const DEFAULT_ELO = 1500;
 
@@ -95,6 +103,29 @@ export class ProfilerAgent {
       }
     }
 
+    // Guard: If we have no artist data at all (no Spotify, no cache), return early
+    // with a minimal taste state that the UI can detect and handle gracefully.
+    if (!artists || artists.length === 0) {
+      console.warn("ProfilerAgent: No artist data available — cold start with no connectivity.");
+      return {
+        error: 'no_data',
+        eloRatings: DataStore.getEloRatings(),
+        topRankedArtists: [],
+        totalRatedArtists: 0,
+        tasteTiers: { coreIdentity: [], activeObsessions: [], fringeDiscovery: [], activelyDismissed: [] },
+        topGenres: [],
+        artists: [],
+        tracks: [],
+        temporalLayers: { identity: [], evolution: [], mood: [] },
+        genreDistribution: {},
+        musicDimensions: { mellow: 0, unpretentious: 0, sophisticated: 0, intense: 0, contemporary: 0 },
+        discoveryProfile: { mainstreaminess: 0.5, specialistIndex: 0.5, diversityScore: 0 },
+        userMetadata: DataStore.getUserMetadata(),
+        explicitPreferences: DataStore.getExplicitPreferences(),
+        sessionDefaults: DataStore.getSessionDefaults(),
+      };
+    }
+
     // --- Decide: Merge with existing Elo ratings ---
     const eloRatings = this._initializeEloRatings(artists);
 
@@ -130,7 +161,7 @@ export class ProfilerAgent {
       diversityScore: computeDiversityScore(genreDistribution),
     };
 
-    return {
+    const tasteState = {
       eloRatings,
       topRankedArtists: allRanked.slice(0, 50), // Exposed for UI Leaderboard rendering
       totalRatedArtists: allRanked.length,
@@ -148,6 +179,25 @@ export class ProfilerAgent {
       explicitPreferences: DataStore.getExplicitPreferences(),
       sessionDefaults: DataStore.getSessionDefaults()
     };
+
+    // --- Background: index artists into the embedding store (fire-and-forget) ---
+    // This runs asynchronously and never delays the pipeline. On first run it
+    // downloads the ~23MB all-MiniLM-L6-v2 model; subsequent runs are instant.
+    const LLM_BACKEND = typeof import.meta !== 'undefined'
+      ? (import.meta.env?.VITE_LLM_BACKEND || 'gemini')
+      : 'gemini';
+    if (LLM_BACKEND === 'ollama') {
+      // Only index in Ollama mode — Gemini mode uses Last.fm which doesn't need embeddings
+      const allArtistsForIndex = Object.entries(eloRatings)
+        .filter(([, d]) => d.name && d.name !== 'undefined')
+        .map(([id, d]) => ({ id, name: d.name, genres: d.genres || [], macroGenres: d.macroGenres || [] }));
+
+      EmbeddingStore.indexArtists(allArtistsForIndex).catch(err =>
+        console.debug('EmbeddingStore: Background index skipped:', err.message)
+      );
+    }
+
+    return tasteState;
   }
 
   /**
@@ -271,8 +321,8 @@ export class ProfilerAgent {
    */
   processGameResult(artistAId, artistBId, winnerId, eloEngine, artistA = null, artistB = null) {
     const ratings = DataStore.getEloRatings();
-    
-    // Ensure both exist with defaults — include name/imageUrl so the leaderboard never shows "undefined"
+
+    // Ensure both artists exist with defaults
     [[artistAId, artistA], [artistBId, artistB]].forEach(([id, meta]) => {
       if (!ratings[id]) {
         ratings[id] = {
@@ -283,29 +333,56 @@ export class ProfilerAgent {
           macroGenres: meta?.macroGenres || [],
           wins: 0, losses: 0, ties: 0,
           comparison_count: 0,
-          source: 'game'
+          source: 'game',
+          ...initBradleyTerry(),  // Initialize BT fields from the start
         };
       } else {
         // Patch any previously-stored entry that's missing a name (legacy data)
         if (!ratings[id].name && meta?.name) {
-          ratings[id].name = meta.name;
+          ratings[id].name    = meta.name;
           ratings[id].imageUrl = ratings[id].imageUrl || meta?.images?.[0]?.url || null;
-          ratings[id].genres = ratings[id].genres?.length ? ratings[id].genres : (meta?.genres || []);
+          ratings[id].genres  = ratings[id].genres?.length ? ratings[id].genres : (meta?.genres || []);
+        }
+        // Migrate legacy entries that don't yet have BT fields
+        if (ratings[id].bt_strength === undefined) {
+          Object.assign(ratings[id], initBradleyTerry());
         }
       }
     });
 
-    const rA = ratings[artistAId].rating;
-    const rB = ratings[artistBId].rating;
     const winner = winnerId === artistAId ? 'A' : (winnerId === artistBId ? 'B' : 'DRAW');
+    const dataA  = ratings[artistAId];
+    const dataB  = ratings[artistBId];
 
-    const { newA, newB } = eloEngine.updateRatings(rA, rB, winner);
+    // Choose rating model:
+    //   - Elo during cold start (< BRADLEY_TERRY_THRESHOLD comparisons)
+    //   - Bradley-Terry once both artists are past the threshold
+    // Research basis: "Bradley-Terry models are superior because they can accommodate
+    // the inherent noise and uncertainty of human taste while providing a more stable
+    // global representation of the preference hierarchy."
+    const usesBT = getModelForArtist(dataA) === 'bradley-terry'
+                && getModelForArtist(dataB) === 'bradley-terry';
 
-    // Update Rating
-    ratings[artistAId].rating = newA;
-    ratings[artistBId].rating = newB;
+    if (usesBT) {
+      // --- Bradley-Terry Update ---
+      const { newA, newB } = updateBradleyTerry(dataA, dataB, winner);
+      Object.assign(ratings[artistAId], newA);
+      Object.assign(ratings[artistBId], newB);
+      // Keep rating field in sync for backward-compatible leaderboard sorting
+      ratings[artistAId].rating = btStrengthToRating(newA.bt_strength);
+      ratings[artistBId].rating = btStrengthToRating(newB.bt_strength);
+    } else {
+      // --- Elo Update (cold start) ---
+      const { newA, newB } = eloEngine.updateRatings(dataA.rating, dataB.rating, winner);
+      ratings[artistAId].rating = newA;
+      ratings[artistBId].rating = newB;
+      // Also update BT strength fields using the simpler Elo-based estimate
+      // so the transition to full BT is smooth
+      ratings[artistAId].bt_strength = (newA - 1500) / 100;
+      ratings[artistBId].bt_strength = (newB - 1500) / 100;
+    }
 
-    // Update Affinity Stats
+    // --- Update shared affinity stats (same for both models) ---
     const now = Date.now();
     ratings[artistAId].comparison_count = (ratings[artistAId].comparison_count || 0) + 1;
     ratings[artistBId].comparison_count = (ratings[artistBId].comparison_count || 0) + 1;
@@ -313,17 +390,17 @@ export class ProfilerAgent {
     ratings[artistBId].last_compared_at = now;
 
     if (winner === 'A') {
-      ratings[artistAId].wins = (ratings[artistAId].wins || 0) + 1;
+      ratings[artistAId].wins   = (ratings[artistAId].wins   || 0) + 1;
       ratings[artistBId].losses = (ratings[artistBId].losses || 0) + 1;
     } else if (winner === 'B') {
-      ratings[artistBId].wins = (ratings[artistBId].wins || 0) + 1;
+      ratings[artistBId].wins   = (ratings[artistBId].wins   || 0) + 1;
       ratings[artistAId].losses = (ratings[artistAId].losses || 0) + 1;
     } else {
       ratings[artistAId].ties = (ratings[artistAId].ties || 0) + 1;
       ratings[artistBId].ties = (ratings[artistBId].ties || 0) + 1;
     }
 
-    // Record the matchup to prevent exact repeats
+    // Record matchup to prevent exact repeats
     if (!ratings[artistAId].matchups) ratings[artistAId].matchups = {};
     if (!ratings[artistBId].matchups) ratings[artistBId].matchups = {};
     ratings[artistAId].matchups[artistBId] = true;

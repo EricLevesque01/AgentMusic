@@ -9,10 +9,45 @@
 import { callWithTools } from '../data/gemini-api.js';
 import { getArtistMetadata } from '../data/musicbrainz-api.js';
 import { getSimilarArtists } from '../data/lastfm-api.js';
-import { searchTrack, searchArtists, getArtistTopTracks } from '../data/spotify-api.js';
 import { buildSoulPrefix } from './soul.js';
 import { UserModel } from './user-model.js';
 import { DataStore } from '../data/data-store.js';
+
+/**
+ * JSON Schema for the Curator's response.
+ * Passed as the Ollama `format:` parameter to guarantee syntactically valid JSON
+ * and eliminate the #1 source of Ollama pipeline failures (malformed output).
+ * The Gemini path ignores this — it uses prompt instructions instead.
+ *
+ * Research basis: "Syntactically valid JSON is easy because Ollama supports
+ * structured outputs with a JSON schema." (Deep Research, 2026)
+ */
+const CURATOR_RESPONSE_SCHEMA = {
+  type: 'object',
+  properties: {
+    reflection: {
+      type: 'string',
+      description: '2-3 sentence curator\'s reflection on the playlist theme and curation choices',
+    },
+    playlistName: {
+      type: 'string',
+      description: 'Evocative, specific playlist name (not generic)',
+    },
+    playlist: {
+      type: 'array',
+      items: {
+        type: 'object',
+        properties: {
+          id:     { type: 'string', description: 'Spotify track ID' },
+          reason: { type: 'string', description: 'One sentence: why this track fits the playlist' },
+        },
+        required: ['id', 'reason'],
+      },
+      description: 'Ordered list of selected tracks',
+    },
+  },
+  required: ['reflection', 'playlistName', 'playlist'],
+};
 
 export class CuratorAgent {
 
@@ -23,46 +58,46 @@ export class CuratorAgent {
   _analyzeIntent(sessionIntent) {
     const intent = (sessionIntent || '').toLowerCase();
 
-    // Artist deep-dive: "deep dive into Miles Davis", "all Radiohead", "only Beatles"
-    if (/deep.?dive.*into|all\s+\w|only\s+\w|just\s+\w|discography|catalog|everything by/i.test(intent)) {
+    // Artist focus: "deep dive into Miles Davis", "check out Geese", "my friend told me to listen to X"
+    if (/deep.?dive.*into|all\s+\w|only\s+\w|just\s+\w|discography|catalog|everything by|check.?out|listen to|try\s+\w|friend.*told|recommend|heard about|got.?into/i.test(intent)) {
       return {
         intentType: 'artist_focus',
-        targetTracks: '8-15',
-        maxPerArtist: 'no limit — this is an artist deep-dive',
+        targetTracks: '8-20 — as many as the artist deserves',
+        maxPerArtist: 'no limit — this is an artist-focused request',
         maxPerArtistNum: 99,
-        diversityNote: 'This is an artist-focused request. Multiple tracks from the target artist are expected and welcome.',
+        diversityNote: 'The user wants to hear THIS artist. The majority of tracks should be from the named artist. Add a few related artists for context, but the focus is on the requested artist.',
         eraNote: 'Span the artist\'s career — include early, peak, and recent work.',
       };
     }
 
-    // Genre exploration: "explore jazz", "introduce me to electronic", "help me get into classical"
+    // Genre exploration: "explore jazz", "introduce me to electronic"
     if (/explor|introduce|get.?into|new to|first time|haven.t listened|teach me|guide.*through/i.test(intent)) {
       return {
         intentType: 'genre_exploration',
-        targetTracks: '12-15',
+        targetTracks: '12-20 — enough to give a real tour of the genre',
         maxPerArtist: '1 — genre exploration demands maximum artist diversity',
         maxPerArtistNum: 1,
-        diversityNote: 'MAXIMUM DIVERSITY REQUIRED: Every track must be from a DIFFERENT artist. The user wants to explore broadly across the genre. Prioritize canonical, universally respected artists alongside interesting deep cuts.',
-        eraNote: 'Span multiple decades and sub-styles. Include foundational classics, peak-era masterpieces, and modern torchbearers. Do NOT cluster everything in one era.',
+        diversityNote: 'MAXIMUM DIVERSITY REQUIRED: Every track must be from a DIFFERENT artist.',
+        eraNote: 'Span multiple decades and sub-styles.',
       };
     }
 
-    // Mood/activity: "studying", "workout", "driving", "cooking", "relaxing"
+    // Mood/activity: "studying", "workout", "driving"
     if (/stud|work.?out|gym|driv|cook|relax|sleep|focus|chill|party|dinner|morning|night|run|jog|meditat/i.test(intent)) {
       return {
         intentType: 'mood_activity',
-        targetTracks: '10-18',
+        targetTracks: '15-25 — mood playlists should feel like a full session',
         maxPerArtist: '2',
         maxPerArtistNum: 2,
-        diversityNote: 'Balance is key. Mix familiar favorites with new discoveries that match the mood. Enough variety to keep it interesting without jarring transitions.',
-        eraNote: 'Era is less important than mood cohesion. Pick whatever era best serves the vibe.',
+        diversityNote: 'Mix familiar favorites with new discoveries that match the mood.',
+        eraNote: 'Era is less important than mood cohesion.',
       };
     }
 
     // Default / general
     return {
       intentType: 'general',
-      targetTracks: '12-18',
+      targetTracks: '10-20 — choose whatever length feels right for the intent',
       maxPerArtist: '2',
       maxPerArtistNum: 2,
       diversityNote: 'Balance familiarity with discovery. Mix known favorites with new finds.',
@@ -150,6 +185,26 @@ export class CuratorAgent {
       if (signals.skippedArtists?.length) signalsStr += `\n- Skipped artists: ${signals.skippedArtists.join(', ')}`;
     }
 
+    // --- Scout's handoff note (blackboard) ---
+    let scoutHandoff = '';
+    if (context?.blackboard?.scout) {
+      const s = context.blackboard.scout;
+      const parts = [`\nSCOUT'S HANDOFF (how this pool was assembled):`];
+      parts.push(`- Strategy: ${s.searchStrategy}`);
+      if (s.sourceBreakdown) {
+        const sources = Object.entries(s.sourceBreakdown).map(([k, v]) => `${k}: ${v}`).join(', ');
+        parts.push(`- Source breakdown: ${sources}`);
+      }
+      if (s.usedAgenticRetrieval) {
+        parts.push(`- ⚡ LLM-CHOSEN TRACKS IN POOL: The Scout hand-picked specific tracks for this intent. Tracks with source "llm_specific" or "intent_search" were chosen by the LLM to serve the session intent — PRIORITIZE THESE over generic top-tracks.`);
+      }
+      if (s.highConfidence?.length) parts.push(`- High-confidence (from user taste): ${s.highConfidence.join(', ')}`);
+      if (s.riskyBets?.length) parts.push(`- Risky bets (exploration): ${s.riskyBets.join(', ')}`);
+      if (s.gaps?.length) parts.push(`- Coverage gaps being addressed: ${s.gaps.join(', ')}`);
+      if (s.spotifyDegraded) parts.push(`- ⚠ Spotify was rate-limited — some tracks may be from Last.fm fallback data`);
+      scoutHandoff = parts.join('\n');
+    }
+
     const systemPrompt = `${buildSoulPrefix()}
 
 You are acting as the Curator — the playlist assembler. Assemble a cohesive, high-quality playlist from the Candidate Pool that authentically serves the Session Intent.
@@ -161,11 +216,12 @@ USER TASTE PROFILE:
 ${userModelContext}
 ${memoriesStr}
 ${signalsStr}
+${scoutHandoff}
 
 SESSION INTENT: "${sessionIntent || 'General vibe'}"
 
 PLAYLIST PARAMETERS (determined by intent analysis):
-- Target track count: ${params.targetTracks} (choose an intentional number within this range)
+- Suggested track count: ${params.targetTracks}
 - Max tracks per artist: ${params.maxPerArtist}
 - ${params.diversityNote}
 - ${params.eraNote}
@@ -191,7 +247,7 @@ Return a single JSON object:
   ]
 }
 
-The playlist array length should be within your target range (${params.targetTracks}).
+Use your judgment on playlist length — the suggested range is a guide, not a rule.
 Return ONLY valid JSON.`;
 
     const userMessage = `Candidate Pool:\n${JSON.stringify(poolForPrompt, null, 2)}`;
@@ -220,7 +276,7 @@ Return ONLY valid JSON.`;
     try {
       if (onThought) onThought("Curator: Reflecting on constraints and selecting tracks...");
       const { callWithTools } = await import('../data/gemini-api.js');
-      const result = await callWithTools(systemPrompt, messages, [], 'reasoning');
+      const result = await callWithTools(systemPrompt, messages, [], 'reasoning', false, 'curator', CURATOR_RESPONSE_SCHEMA);
       const parsed = extractJSON(result.textReply);
 
       if (parsed.reflection) {
@@ -241,7 +297,8 @@ Return ONLY valid JSON.`;
       try {
         if (onThought) onThought("Curator: Retrying selection...");
         const { callWithTools } = await import('../data/gemini-api.js');
-        const result = await callWithTools(systemPrompt, messages, [], 'fast');
+        const result = await callWithTools(systemPrompt, messages, [], 'fast', false, 'curator', CURATOR_RESPONSE_SCHEMA);
+
         const parsed = extractJSON(result.textReply);
 
         if (parsed.reflection) {
@@ -257,7 +314,7 @@ Return ONLY valid JSON.`;
       } catch (retryErr) {
         console.error("CuratorAgent: Both attempts failed, falling back to top Elo.", retryErr);
         // Fallback: take up to the lower bound of the target range
-        const fallbackCount = parseInt(params.targetTracks) || 12;
+        const fallbackCount = parseInt(params.targetTracks.match(/\d+/)?.[0]) || 12;
         selectedIds = poolForPrompt.slice(0, fallbackCount).map(p => p.id);
       }
     }

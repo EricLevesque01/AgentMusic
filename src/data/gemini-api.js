@@ -13,9 +13,10 @@
  *   4. Ollama must be running on http://localhost:11434
  */
 const GEMINI_API_KEY = import.meta.env?.VITE_GEMINI_API_KEY;
-const LLM_BACKEND = import.meta.env?.VITE_LLM_BACKEND || 'gemini'; // 'gemini' or 'ollama'
-const OLLAMA_BASE_URL = import.meta.env?.VITE_OLLAMA_URL || '/ollama';
-const OLLAMA_MODEL = import.meta.env?.VITE_OLLAMA_MODEL || 'llama3.1';
+const LLM_BACKEND    = import.meta.env?.VITE_LLM_BACKEND || 'gemini';
+const OLLAMA_BASE_URL = import.meta.env?.VITE_OLLAMA_URL  || '/ollama';
+
+import { getModelForAgent, modelSupportsNativeTools } from './model-router.js';
 
 const GEMINI_MODELS = {
   fast: 'gemini-2.5-flash',       // Chat, intent parsing, session summaries
@@ -29,11 +30,13 @@ const GEMINI_MODELS = {
  * @param {Array}    toolDeclarations  - Gemini function declarations
  * @param {string}   modelTier         - 'fast' (default) or 'reasoning'
  * @param {boolean}  useWebSearch      - Whether to enable Google Search grounding (Gemini only)
+ * @param {string}   agentName         - Agent identifier for local model routing
+ * @param {object}   formatSchema      - Optional JSON schema for Ollama structured output (ignored by Gemini)
  * @returns {{ functionCalls, textReply }}
  */
-export async function callWithTools(systemPrompt, messages, toolDeclarations = [], modelTier = 'fast', useWebSearch = false) {
+export async function callWithTools(systemPrompt, messages, toolDeclarations = [], modelTier = 'fast', useWebSearch = false, agentName = 'default', formatSchema = null) {
   if (LLM_BACKEND === 'ollama') {
-    return _callOllama(systemPrompt, messages, toolDeclarations, modelTier);
+    return _callOllama(systemPrompt, messages, toolDeclarations, modelTier, agentName, formatSchema);
   }
   return _callGemini(systemPrompt, messages, toolDeclarations, modelTier, useWebSearch);
 }
@@ -66,6 +69,7 @@ async function _callGemini(systemPrompt, messages, toolDeclarations, modelTier, 
     method:  'POST',
     headers: { 'Content-Type': 'application/json' },
     body:    JSON.stringify(body),
+    signal:  AbortSignal.timeout(30000), // 30s timeout — prevents pipeline hangs
   });
 
   if (!response.ok) {
@@ -91,7 +95,10 @@ async function _callGemini(systemPrompt, messages, toolDeclarations, modelTier, 
 
 // --- Ollama Backend ---
 
-async function _callOllama(systemPrompt, messages, toolDeclarations, modelTier) {
+async function _callOllama(systemPrompt, messages, toolDeclarations, modelTier, agentName = 'default', formatSchema = null) {
+  const model = getModelForAgent(agentName);
+  const useNativeTools = modelSupportsNativeTools(model) && toolDeclarations.length > 0;
+
   // Convert Gemini message format → Ollama/OpenAI chat format
   const ollamaMessages = [
     { role: 'system', content: systemPrompt },
@@ -105,32 +112,40 @@ async function _callOllama(systemPrompt, messages, toolDeclarations, modelTier) 
     }
   }
 
-  // If there are tool declarations, instruct the model to output JSON matching the tool schema
-  if (toolDeclarations.length > 0) {
-    const toolNames = toolDeclarations.map(t => t.name);
-    const toolSchemas = toolDeclarations.map(t => ({
-      name: t.name,
-      description: t.description,
-      parameters: t.parameters,
-    }));
-
-    ollamaMessages[0].content += `\n\nYou have access to the following tools:\n${JSON.stringify(toolSchemas, null, 2)}\n\nTo use a tool, respond with ONLY a JSON object in this exact format:\n{"tool_call": {"name": "tool_name", "args": {...}}}\n\nIf you want to respond with text only (no tool), just write your response normally.\nAvailable tools: ${toolNames.join(', ')}`;
-  }
-
+  // Build the request body
   const body = {
-    model: OLLAMA_MODEL,
+    model,
     messages: ollamaMessages,
     stream: false,
     options: {
       temperature: 0.7,
       num_predict: modelTier === 'reasoning' ? 4096 : 2048,
     },
+    // JSON schema constraint — enforces syntactically valid structured output.
+    // Critical for Curator agent: eliminates malformed JSON failures.
+    // Only applied when no tools are active (format + tools conflict in Ollama).
+    ...(formatSchema && !useNativeTools ? { format: formatSchema } : {}),
   };
+
+  if (useNativeTools) {
+    // Use Ollama's native tool calling API (qwen3, hermes3, gemma3-tools, llama3.1)
+    body.tools = toolDeclarations.map(t => ({
+      type: 'function',
+      function: { name: t.name, description: t.description, parameters: t.parameters },
+    }));
+  } else if (toolDeclarations.length > 0) {
+    // Legacy prompt-injection fallback for models without native tool support
+    const toolSchemas = toolDeclarations.map(t => ({
+      name: t.name, description: t.description, parameters: t.parameters,
+    }));
+    ollamaMessages[0].content += `\n\nYou have access to the following tools:\n${JSON.stringify(toolSchemas, null, 2)}\n\nTo use a tool, respond with ONLY a JSON object in this exact format:\n{"tool_call": {"name": "tool_name", "args": {...}}}\n\nIf you want to respond with text only (no tool), just write your response normally.\nAvailable tools: ${toolDeclarations.map(t => t.name).join(', ')}`;
+  }
 
   const response = await fetch(`${OLLAMA_BASE_URL}/api/chat`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(body),
+    signal: AbortSignal.timeout(60000), // 60s timeout — local models may be slower
   });
 
   if (!response.ok) {
@@ -143,8 +158,25 @@ async function _callOllama(systemPrompt, messages, toolDeclarations, modelTier) 
 
   // Try to parse tool calls from the response
   const functionCalls = [];
+
+  // Path 1: Native Ollama tool calling (qwen3, hermes3, gemma3-tools)
+  // Tool calls arrive in data.message.tool_calls, not in content text.
+  if (data.message?.tool_calls?.length > 0) {
+    for (const tc of data.message.tool_calls) {
+      if (tc.function) {
+        functionCalls.push({
+          name: tc.function.name,
+          args: tc.function.arguments || {},
+        });
+      }
+    }
+    if (functionCalls.length > 0) {
+      return { functionCalls, textReply: reply };
+    }
+  }
+
+  // Path 2: Legacy prompt-injection fallback — parse tool_call from content text
   try {
-    // Check if the response is a JSON tool call
     const trimmed = reply.trim();
     if (trimmed.startsWith('{') && trimmed.includes('tool_call')) {
       const parsed = JSON.parse(trimmed);

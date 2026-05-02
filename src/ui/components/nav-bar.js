@@ -3,10 +3,11 @@
  * "Deep Space Pro" — replaces bottom nav with a fixed left sidebar.
  * Renders both a desktop sidebar AND a mobile bottom nav from the same data.
  */
+import { DataStore } from '../../data/data-store.js';
 
 const NAV_ITEMS = [
   {
-    id: 'home', label: 'Overview', hash: '#/',
+    id: 'home', label: 'Discover', hash: '#/',
     icon: `<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
       <path d="M1 6.5L8 1l7 5.5V14a1 1 0 01-1 1H2a1 1 0 01-1-1V6.5z"/>
     </svg>`,
@@ -55,6 +56,7 @@ export function createNavBar() {
         <button class="nav-item" data-route="${item.hash}" id="nav-${item.id}" aria-label="${item.label}">
           <span class="nav-icon-svg">${item.icon}</span>
           <span>${item.label}</span>
+          ${item.id === 'home' ? '<span id="nav-discover-badge" class="nav-badge" style="display:none"></span>' : ''}
         </button>
       `).join('')}
     </nav>
@@ -91,6 +93,7 @@ export function createNavBar() {
     <button class="nav-item" data-route="${item.hash}" id="mobile-nav-${item.id}" aria-label="${item.label}">
       <span class="nav-icon-svg">${item.icon}</span>
       <span>${item.label}</span>
+      ${item.id === 'home' ? '<span id="mobile-nav-discover-badge" class="nav-badge" style="display:none"></span>' : ''}
     </button>
   `).join('');
 
@@ -104,7 +107,35 @@ export function createNavBar() {
   const frag = document.createDocumentFragment();
   frag.appendChild(sidebar);
   frag.appendChild(bottomNav);
+
+  // Initial badge update (after the DOM fragment is added)
+  requestAnimationFrame(() => _updateDiscoverBadge());
+
+  // Keep badge live as the scheduler generates playlists
+  window.addEventListener('tastegraph:library-updated', _updateDiscoverBadge);
+
   return frag;
+}
+
+/**
+ * Update the unlistened-playlist count badge on the Discover nav item.
+ * Shows the number of new, unlistened playlists. Hides when zero.
+ */
+function _updateDiscoverBadge() {
+  try {
+    const count = DataStore.getUnlistenedCount();
+    const text  = count > 0 ? String(count) : '';
+    const show  = count > 0;
+
+    for (const id of ['nav-discover-badge', 'mobile-nav-discover-badge']) {
+      const el = document.getElementById(id);
+      if (!el) continue;
+      el.textContent  = text;
+      el.style.display = show ? 'inline-flex' : 'none';
+    }
+  } catch (e) {
+    // DataStore not available (tests, server-side) — ignore
+  }
 }
 
 export function updateNavActive(hash) {

@@ -8,6 +8,7 @@ export class PlaylistView {
     this.container = container;
     this._currentAudio = null;
     this._currentBtn = null;
+    this._currentCandidate = null;
     this._listenStart = null;
   }
 
@@ -85,10 +86,14 @@ export class PlaylistView {
     if (!track) return ''; // Safety: skip invalid entries
     const albumImg = track.album?.images?.[0]?.url;
     const previewUrl = track.preview_url || '';
+    // Priority: Narrator's per-track explanation > Curator's dominantFactor > fallback
+    const narratorExplanation = explanations?.trackExplanations instanceof Map
+      ? explanations.trackExplanations.get(track.id)
+      : explanations?.trackExplanations?.[track.id];
     
-    const explanation = dominantFactor && dominantFactor !== 'Selected based on your taste profile.' 
-      ? dominantFactor 
-      : 'Curator selected this track based on the overall session intent and your taste profile.';
+    const explanation = narratorExplanation
+      || (dominantFactor && dominantFactor !== 'Selected based on your taste profile.' ? dominantFactor : null)
+      || 'Curator selected this track based on the overall session intent and your taste profile.';
 
     return `
       <div class="glass-card" id="track-card-${index}"
@@ -163,6 +168,7 @@ export class PlaylistView {
           btn.style.color = 'var(--accent-primary)';
           this._currentAudio = audio;
           this._currentBtn = btn;
+          this._currentCandidate = scoredPlaylist[idx];
           this._listenStart = Date.now();
 
           // When preview ends naturally → full listen → positive signal
@@ -197,13 +203,13 @@ export class PlaylistView {
       this._currentBtn.style.color = '';
 
       // If they listened less than 10s before switching, it's a skip
-      if (listenMs < 10000 && window.TG?.dj) {
-        // We don't have the candidate reference here, but the DJ still tracks the skip count
-        window.TG.dj.consecutiveSkips++;
+      if (listenMs < 10000 && window.TG?.dj && this._currentCandidate) {
+        window.TG.dj.recordSkip(this._currentCandidate, listenMs);
       }
 
       this._currentAudio = null;
       this._currentBtn = null;
+      this._currentCandidate = null;
     }
   }
 }

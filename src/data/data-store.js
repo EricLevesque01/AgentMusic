@@ -185,15 +185,23 @@ export class DataStore {
   // --- Saved Playlists ---
   static getSavedPlaylists() {
     const playlists = this.load('saved_playlists') || [];
-    // Rehydrate: convert trackExplanations back from plain object → Map
     for (const p of playlists) {
-      if (p.context?.explanations?.trackExplanations && !(p.context.explanations.trackExplanations instanceof Map)) {
-        p.context.explanations.trackExplanations = new Map(
-          Object.entries(p.context.explanations.trackExplanations)
-        );
-      }
+      this._rehydrateContext(p.context);
     }
     return playlists;
+  }
+
+  /**
+   * Rehydrate a serialized playlist context: convert trackExplanations
+   * from plain Object back to Map (JSON doesn't serialize Maps).
+   */
+  static _rehydrateContext(context) {
+    if (!context?.explanations?.trackExplanations) return;
+    if (!(context.explanations.trackExplanations instanceof Map)) {
+      context.explanations.trackExplanations = new Map(
+        Object.entries(context.explanations.trackExplanations)
+      );
+    }
   }
 
   static saveGeneratedPlaylist(context) {
@@ -220,5 +228,102 @@ export class DataStore {
     let playlists = this.getSavedPlaylists();
     playlists = playlists.filter(p => p.id !== id);
     this.save('saved_playlists', playlists);
+  }
+
+  // --- Playlist Library (Phase 3: Scheduler-managed, enriched metadata) ---
+
+  /**
+   * Get the playlist library (scheduler-managed playlists with listen tracking).
+   * Falls back to migrating old saved_playlists format.
+   */
+  static getPlaylistLibrary() {
+    let library = this.load('playlist_library') || [];
+
+    // Rehydrate Maps
+    for (const p of library) {
+      this._rehydrateContext(p.context);
+    }
+    return library;
+  }
+
+  /**
+   * Save a playlist to the library (used by scheduler and manual generation).
+   * @param {object} context — PipelineContext
+   * @param {string} intent — the seed intent used to generate
+   * @param {string} source — 'scheduler' | 'manual' | 'concierge'
+   * @returns {string} playlist ID
+   */
+  static saveToLibrary(context, intent = '', source = 'manual') {
+    const serializable = JSON.parse(JSON.stringify(context, (key, value) => {
+      if (value instanceof Map) return Object.fromEntries(value);
+      return value;
+    }));
+
+    const library = this.getPlaylistLibrary();
+    const entry = {
+      id: Date.now().toString(),
+      createdAt: Date.now(),
+      listenedAt: null,
+      intent,
+      source,
+      title: context.explanations?.playlistTitle || context.playlistName || intent.slice(0, 60) || 'Curated Mix',
+      trackCount: context.scoredPlaylist?.length || 0,
+      curatorReflection: context.curatorReflection || '',
+      context: serializable,
+    };
+    library.unshift(entry);
+
+    // Cap at 20 playlists to manage storage
+    if (library.length > 20) library.length = 20;
+
+    this.save('playlist_library', library);
+
+    // Also save to legacy format for backward compat
+    this.saveGeneratedPlaylist(context);
+
+    return entry.id;
+  }
+
+  /**
+   * Mark a playlist as listened.
+   */
+  static markPlaylistListened(id) {
+    const library = this.getPlaylistLibrary();
+    const entry = library.find(p => p.id === id);
+    if (entry) {
+      entry.listenedAt = Date.now();
+      this.save('playlist_library', library);
+    }
+  }
+
+  /**
+   * Count unlistened playlists in the library.
+   */
+  static getUnlistenedCount() {
+    return this.getPlaylistLibrary().filter(p => !p.listenedAt).length;
+  }
+
+  // --- Suggested Artists Cache ---
+
+  static getSuggestedArtistsCache() {
+    return this.load('suggested_artists');
+  }
+
+  static setSuggestedArtistsCache(artists) {
+    this.save('suggested_artists', artists, 24 * 60 * 60 * 1000); // 24h TTL
+  }
+
+  static clearSuggestedArtistsCache() {
+    this.clear('suggested_artists');
+  }
+
+  // --- Scheduler State ---
+
+  static getSchedulerState() {
+    return this.load('scheduler_state') || { lastRunAt: null, isRunning: false };
+  }
+
+  static setSchedulerState(state) {
+    this.save('scheduler_state', state);
   }
 }

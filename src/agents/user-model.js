@@ -14,6 +14,8 @@ import { DataStore } from '../data/data-store.js';
 import {
   computeMusicDimensions,
   computeGenreDistribution,
+  computeDecayWeightedGenres,
+  detectTasteDrift,
   computeMainstreaminess,
   computeSpecialistIndex,
   computeDiversityScore,
@@ -125,18 +127,60 @@ export class UserModel {
     );
     const compCount = allRatedArtists.reduce((s, a) => s + (a.comparison_count || 0), 0);
     genreDist._confidence = Math.min(0.95, compCount / 100); // 100 comparisons = max confidence
+    genreDist._lastEvidence = Date.now();
     model.tasteProfile.genreDistribution = genreDist;
 
-    // --- MUSIC dimensions ---
+    // --- MUSIC dimensions (static — from genre distribution) ---
     const musicDims = computeMusicDimensions(genreDist);
     musicDims._confidence = genreDist._confidence;
+    musicDims._lastEvidence = Date.now();
     model.tasteProfile.musicDimensions = musicDims;
+
+    // --- MUSIC dimensions (decay-weighted — responds to taste drift) ---
+    // Pull behavioral evidence and compute a time-decayed genre distribution
+    // so recent listening patterns dominate the MUSIC profile update.
+    // Formula: w(t) = e^(-λ × Δt / T_year), λ=0.7 per research.
+    try {
+      const evidence = UserModel.loadEvidence();
+      const allBehaviorEvents = [
+        ...(evidence.eloWins    || []).map(e => ({ ...e, type: 'eloWin' })),
+        ...(evidence.eloLosses  || []).map(e => ({ ...e, type: 'eloLoss' })),
+        ...(evidence.fullListens|| []).map(e => ({ ...e, type: 'fullListen' })),
+        ...(evidence.skips      || []).map(e => ({ ...e, type: 'skip' })),
+        ...(evidence.rapidSkips || []).map(e => ({ ...e, type: 'rapidSkip' })),
+        ...(evidence.saves      || []).map(e => ({ ...e, type: 'save' })),
+      ];
+
+      if (allBehaviorEvents.length >= 10) {
+        const decayDist = computeDecayWeightedGenres(allBehaviorEvents);
+        const decayDims = computeMusicDimensions(decayDist);
+        decayDims._confidence = Math.min(0.9, allBehaviorEvents.length / 50);
+        model.tasteProfile.musicDimensionsDecay = decayDims;
+
+        // Detect drift signals and persist them
+        const driftResult = detectTasteDrift(evidence, model);
+        if (driftResult.driftDetected) {
+          const currentTrends = UserModel.getDriftTrends();
+          currentTrends.genreMomentum = Object.entries(driftResult.momentum).map(([g, v]) => ({ genre: g, delta: v }));
+          currentTrends.genreDecline  = Object.entries(driftResult.decline).map(([g, v]) => ({ genre: g, delta: -v }));
+          currentTrends.driftSignals  = driftResult.signals;
+          currentTrends.discoveryTrajectory = Object.keys(driftResult.momentum).length > 0
+            ? 'expanding'  // gaining new genres
+            : (Object.keys(driftResult.decline).length > 0 ? 'narrowing' : 'stable');
+          UserModel.setDriftTrends(currentTrends);
+        }
+      }
+    } catch (err) {
+      // Behavioral evidence not yet available — skip decay computation
+      console.debug('UserModel: skipping decay-weighted MUSIC dims (insufficient evidence):', err.message);
+    }
 
     // --- Discovery profile ---
     model.discoveryProfile.mainstreaminess = computeMainstreaminess(artists);
     model.discoveryProfile.specialistIndex = computeSpecialistIndex(eloRatings);
     model.discoveryProfile.diversityScore = computeDiversityScore(genreDist);
     model.discoveryProfile._confidence = Math.min(0.9, artists.length / 50);
+    model.discoveryProfile._lastEvidence = Date.now();
 
     // --- Anchor artists (settled, high-confidence favorites) ---
     model.tasteProfile.anchorArtists = Object.entries(eloRatings)
@@ -169,6 +213,7 @@ export class UserModel {
     else if (allGenres.size >= 3) model.sophistication.level = 'casual';
     else model.sophistication.level = 'novice';
     model.sophistication._confidence = Math.min(0.7, allRatedArtists.length / 30);
+    model.sophistication._lastEvidence = Date.now();
 
     // --- Merge narrative anchors from agent_memories ---
     const prefs = DataStore.getExplicitPreferences();
@@ -491,6 +536,109 @@ Sophistication: ${m.sophistication.level}
 Mainstreaminess: ${m.discoveryProfile.mainstreaminess ?? 'N/A'}
 Last Session: ${episodic.sessions[0]?.summary || 'First session'}
 Permanent Notes: ${prefs.agent_memories?.join('; ') || 'None'}`;
+  }
+
+  /**
+   * Synthesize a natural language narrative about how the user's taste has evolved.
+   * Draws from drift trends, episodic memory, and narrative anchors.
+   *
+   * This is the "friend who remembers" feature — the kind of insight a music-loving
+   * friend would share: "You started with indie rock but you've been going deeper
+   * into post-punk and shoegaze over the last few sessions."
+   *
+   * @returns {{ narrative: string, patterns: object }} — human-readable summary + raw data
+   */
+  static buildTasteEvolutionNarrative() {
+    const trends = UserModel.getDriftTrends();
+    const episodic = UserModel.getEpisodicMemory();
+    const model = UserModel.loadTier1();
+    const sessions = episodic.sessions || [];
+
+    const narrative = [];
+    const patterns = {
+      risingGenres: [],
+      fadingGenres: [],
+      consistentFavorites: [],
+      discoveryTrajectory: trends.discoveryTrajectory || 'stable',
+      sessionCount: sessions.length,
+    };
+
+    // 1. Genre trajectory
+    const rising = (trends.genreMomentum || [])
+      .filter(g => (g.sessions >= 2) || (g.delta > 0))
+      .slice(0, 3);
+    const fading = (trends.genreDecline || [])
+      .filter(g => (g.sessions >= 2) || (g.delta < 0))
+      .slice(0, 3);
+
+    patterns.risingGenres = rising.map(g => g.genre);
+    patterns.fadingGenres = fading.map(g => g.genre);
+
+    if (rising.length > 0 && fading.length > 0) {
+      narrative.push(
+        `Your taste has been shifting: you're gravitating toward ${rising.map(g => g.genre).join(', ')} while moving away from ${fading.map(g => g.genre).join(', ')}.`
+      );
+    } else if (rising.length > 0) {
+      narrative.push(
+        `You've been increasingly drawn to ${rising.map(g => g.genre).join(', ')} over recent sessions.`
+      );
+    } else if (fading.length > 0) {
+      narrative.push(
+        `You seem to be cooling off on ${fading.map(g => g.genre).join(', ')}.`
+      );
+    }
+
+    // 2. Consistent favorites across sessions
+    const artistFreq = {};
+    for (const s of sessions.slice(0, 5)) {
+      for (const a of (s.lovedArtists || [])) {
+        artistFreq[a] = (artistFreq[a] || 0) + 1;
+      }
+    }
+    const consistentFavs = Object.entries(artistFreq)
+      .filter(([, count]) => count >= 2)
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 5)
+      .map(([name]) => name);
+
+    patterns.consistentFavorites = consistentFavs;
+
+    if (consistentFavs.length > 0) {
+      narrative.push(
+        `${consistentFavs.join(', ')} ${consistentFavs.length === 1 ? 'keeps' : 'keep'} showing up as favorites across sessions — ${consistentFavs.length === 1 ? "they're" : "they're all"} clearly core to your identity right now.`
+      );
+    }
+
+    // 3. Discovery trajectory
+    if (trends.discoveryTrajectory === 'improving') {
+      narrative.push(`Your discovery hit rate is improving — you're skipping less, which means the recommendations are getting more dialed in.`);
+    } else if (trends.discoveryTrajectory === 'declining') {
+      narrative.push(`Your skip rate has been going up recently — you might be in a mood for something more familiar, or the exploration direction needs adjusting.`);
+    }
+
+    // 4. Narrative anchors (durable taste insights from past sessions)
+    const recentAnchors = (model.narrativeAnchors || [])
+      .filter(a => a.source === 'agent_inferred')
+      .slice(-3);
+    if (recentAnchors.length > 0) {
+      narrative.push(
+        `Patterns I've picked up: ${recentAnchors.map(a => a.text).join('. ')}.`
+      );
+    }
+
+    // 5. Session count context
+    if (sessions.length >= 5) {
+      narrative.push(`This is based on ${sessions.length} sessions of listening data.`);
+    } else if (sessions.length >= 2) {
+      narrative.push(`I'm still learning — this is based on ${sessions.length} sessions so far.`);
+    }
+
+    return {
+      narrative: narrative.length > 0
+        ? narrative.join(' ')
+        : 'Not enough listening data yet to detect evolution patterns. Keep playing the Taste Game and generating playlists!',
+      patterns,
+    };
   }
 
   // -----------------------------------------------------------

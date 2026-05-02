@@ -150,7 +150,7 @@ export class ProfileView {
         </div>
 
         <!-- Row 3: Genre Radar + Taste Tiers -->
-        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: var(--space-4);">
+        <div class="profile-analytics-grid" style="display: grid; grid-template-columns: 1fr 1fr; gap: var(--space-4);">
           
           <!-- Genre Radar Chart (Canvas) -->
           <div class="glass-card" style="padding: var(--space-5);">

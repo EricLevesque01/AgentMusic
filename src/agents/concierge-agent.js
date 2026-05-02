@@ -2,13 +2,20 @@
  * TasteGraph — Concierge Agent
  * "The Natural Language Interface" — Parses user chat into structured pipeline actions.
  *
- * Perceives:  User message, current PipelineContext (tasteState, sliders, playlist)
+ * Perceives:  User message, current PipelineContext (tasteState, sliders, playlist),
+ *             episodic memory (past sessions), drift trends (taste evolution),
+ *             narrative anchors (durable taste insights)
  * Decides:    Send to Gemini with function declarations → get structured actions
  * Acts:       Routes parsed actions to Orchestrator, returns conversational reply
+ *
+ * Agentic Memory: The Concierge remembers past sessions and can proactively surface
+ * insights like "You've been gravitating toward post-punk — want me to go deeper?"
+ * This is what makes it feel like a friend, not a search engine.
  */
 import { callWithTools } from '../data/gemini-api.js';
 import { buildSoulPrefix } from './soul.js';
 import { UserModel } from './user-model.js';
+import { DataStore } from '../data/data-store.js';
 
 // --- Gemini Function Declarations ---
 const TOOL_DECLARATIONS = [
@@ -98,6 +105,11 @@ const TOOL_DECLARATIONS = [
     parameters: { type: 'object', properties: {} },
   },
   {
+    name: 'taste_evolution',
+    description: 'Describe how the user\'s taste has evolved over recent sessions. Use when they ask "how has my taste changed?", "what\'s trending in my listening?", or "am I in a rut?"',
+    parameters: { type: 'object', properties: {} },
+  },
+  {
     name: 'adjust_preference',
     description: 'Explicitly boost or penalize a specific artist based on user feedback, or store a permanent memory about their taste.',
     parameters: {
@@ -162,7 +174,7 @@ export class ConciergeAgent {
     let textReply     = '';
 
     try {
-      const result = await callWithTools(systemPrompt, recentHistory, TOOL_DECLARATIONS);
+      const result = await callWithTools(systemPrompt, recentHistory, TOOL_DECLARATIONS, 'fast', false, 'concierge');
       functionCalls = result.functionCalls;
       textReply     = result.textReply;
     } catch (err) {
@@ -216,6 +228,63 @@ export class ConciergeAgent {
     this.chatHistory = [];
   }
 
+  /**
+   * Build a taste evolution narrative from drift trends and episodic memory.
+   * This is the key data that makes the Concierge feel like a friend who
+   * remembers past sessions.
+   */
+  buildTasteEvolutionSummary() {
+    const trends = UserModel.getDriftTrends();
+    const episodic = UserModel.getEpisodicMemory();
+    const parts = [];
+
+    // Genre momentum — what they're gravitating toward
+    if (trends.genreMomentum?.length > 0) {
+      const rising = trends.genreMomentum
+        .filter(g => g.sessions >= 2 || g.delta > 0)
+        .slice(0, 3)
+        .map(g => g.genre);
+      if (rising.length > 0) {
+        parts.push(`Gravitating toward: ${rising.join(', ')}`);
+      }
+    }
+
+    // Genre decline — what they're moving away from
+    if (trends.genreDecline?.length > 0) {
+      const fading = trends.genreDecline
+        .filter(g => g.sessions >= 2 || g.delta < 0)
+        .slice(0, 3)
+        .map(g => g.genre);
+      if (fading.length > 0) {
+        parts.push(`Moving away from: ${fading.join(', ')}`);
+      }
+    }
+
+    // Discovery trajectory
+    if (trends.discoveryTrajectory && trends.discoveryTrajectory !== 'stable') {
+      parts.push(`Discovery trajectory: ${trends.discoveryTrajectory}`);
+    }
+
+    // Drift signals (from behavior-weighted analysis)
+    if (trends.driftSignals?.length > 0) {
+      parts.push(`Drift signals: ${trends.driftSignals.slice(0, 3).join('; ')}`);
+    }
+
+    // Recent session highlights
+    const recentSessions = (episodic.sessions || []).slice(0, 3);
+    if (recentSessions.length > 0) {
+      const sessionSummaries = recentSessions.map(s => {
+        const loved = s.lovedArtists?.slice(0, 2).join(', ') || 'various';
+        return `"${s.intent || 'general'}" — loved ${loved} (${s.stats?.skipRate || 0}% skip rate)`;
+      });
+      parts.push(`Recent sessions:\n${sessionSummaries.map(s => `  • ${s}`).join('\n')}`);
+    }
+
+    return parts.length > 0
+      ? parts.join('\n')
+      : 'Not enough sessions yet to detect taste evolution patterns.';
+  }
+
   // --- Private ---
 
   _buildSystemPrompt(context) {
@@ -237,6 +306,22 @@ export class ConciergeAgent {
     try {
       userModelContext = UserModel.buildConciergeContext();
     } catch (e) { /* Not yet populated */ }
+
+    // Taste evolution context — cross-session pattern awareness
+    let evolutionContext = '';
+    try {
+      const evo = this.buildTasteEvolutionSummary();
+      if (evo && !evo.includes('Not enough sessions')) {
+        evolutionContext = `\nTASTE EVOLUTION (cross-session patterns you've observed):\n${evo}\n\nYou can proactively mention these patterns when relevant — e.g., "I've noticed you've been gravitating toward post-punk lately — want me to go deeper?" This is what makes you feel like a friend, not a search engine.`;
+      }
+    } catch (e) { /* Drift trends not yet available */ }
+
+    // Proactive insights — things worth volunteering
+    let proactiveHints = '';
+    try {
+      const hints = this._buildProactiveHints();
+      if (hints) proactiveHints = hints;
+    } catch (e) { /* No proactive hints available */ }
 
     return `${buildSoulPrefix()}
 
@@ -260,6 +345,8 @@ TASTE TIERS:
 - Top Genres: ${genres}
 
 ${userModelContext}
+${evolutionContext}
+${proactiveHints}
 
 ${trackCount > 0 ? `CURRENT PLAYLIST: ${trackCount} tracks loaded.` : 'No playlist currently loaded.'}
 
@@ -267,7 +354,58 @@ Your job is to understand what the user wants and call the appropriate function(
 When the user describes WHAT THEY WANT MUSIC FOR (studying, working out, road trip, etc.), ALSO call classify_motivation to tag the session purpose.
 If a user asks about their taste, top artists, or vibe — use the leaderboard data above to answer directly. You know their music taste like a close friend.
 If a user asks for artist recommendations, use suggest_artists to inject them into the game pool.
+If you notice a taste evolution pattern that's relevant to the conversation, mention it naturally — you REMEMBER their past sessions.
 Always be brief, warm, and music-focused. Reply in 1-3 sentences max.`;
+  }
+
+  /**
+   * Build proactive hints — things the Concierge can volunteer.
+   * These are based on cross-session patterns that suggest actionable follow-ups.
+   */
+  _buildProactiveHints() {
+    const trends = UserModel.getDriftTrends();
+    const episodic = UserModel.getEpisodicMemory();
+    const hints = [];
+
+    // High skip rates in recent sessions → suggest different approach
+    const recentSessions = (episodic.sessions || []).slice(0, 3);
+    const avgSkipRate = recentSessions.length > 0
+      ? recentSessions.reduce((s, sess) => s + (sess.stats?.skipRate || 0), 0) / recentSessions.length
+      : 0;
+
+    if (avgSkipRate > 40 && recentSessions.length >= 2) {
+      hints.push('INSIGHT: Recent sessions have high skip rates — the user may want more familiar artists or a different genre direction. Consider asking what they\'re in the mood for.');
+    }
+
+    // Discovery trajectory declining → getting fatigued
+    if (trends.discoveryTrajectory === 'declining') {
+      hints.push('INSIGHT: Discovery trajectory is declining — the user may be experiencing discovery fatigue. Lean toward familiar comfort picks unless they explicitly ask for exploration.');
+    }
+
+    // Genre momentum suggests a new obsession
+    const risingGenres = (trends.genreMomentum || [])
+      .filter(g => (g.sessions >= 3) || (g.delta > 0.1));
+    if (risingGenres.length > 0) {
+      hints.push(`INSIGHT: "${risingGenres[0].genre}" is becoming a new obsession — it's appeared in ${risingGenres[0].sessions || 'several'} recent sessions. You could offer to build a deep-dive playlist around it.`);
+    }
+
+    // Repeated loved artists across sessions
+    const artistFreq = {};
+    for (const s of recentSessions) {
+      for (const a of (s.lovedArtists || [])) {
+        artistFreq[a] = (artistFreq[a] || 0) + 1;
+      }
+    }
+    const repeatFavorites = Object.entries(artistFreq)
+      .filter(([, count]) => count >= 2)
+      .map(([name]) => name);
+    if (repeatFavorites.length > 0) {
+      hints.push(`INSIGHT: ${repeatFavorites.join(', ')} keep showing up as favorites — they're clearly core to the user's identity right now.`);
+    }
+
+    return hints.length > 0
+      ? `\nPROACTIVE INSIGHTS (use naturally when relevant):\n${hints.map(h => `- ${h}`).join('\n')}`
+      : '';
   }
 
   _parseAction(functionCall) {
@@ -282,6 +420,7 @@ Always be brief, warm, and music-focused. Reply in 1-3 sentences max.`;
       case 'remember_fact':    return { type: 'remember_fact', fact: args.fact };
       case 'create_playlist':  return { type: 'create_playlist', theme: args.theme };
       case 'summarize_taste':  return { type: 'summarize_taste' };
+      case 'taste_evolution':  return { type: 'taste_evolution' };
       case 'adjust_preference':return { type: 'adjust_preference', target: args.target, action: args.action };
       case 'classify_motivation': return { type: 'classify_motivation', motivation: args.motivation, confidence: args.confidence || 0.5 };
       default:                 return { type: 'freeform_chat' };
@@ -320,6 +459,7 @@ Always be brief, warm, and music-focused. Reply in 1-3 sentences max.`;
       case 'remember_fact':    return `Noted! I'll remember that permanently. 🧠`;
       case 'create_playlist':  return `On it! Compiling the perfect "${first.theme}" playlist for you now... 🎧`;
       case 'summarize_taste':  return `Let me pull up your Sonic Dossier...`;
+      case 'taste_evolution':  return `Let me look at how your taste has been evolving...`;
       case 'adjust_preference':return `Done. I've noted your feedback on ${first.target}.`;
       default:                 return `Done!`;
     }

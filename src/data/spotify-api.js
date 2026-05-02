@@ -6,11 +6,22 @@ import { getValidAccessToken, refreshAccessToken } from '../auth/spotify-auth.js
 
 const BASE_URL = 'https://api.spotify.com/v1';
 
+// Simple throttle — min 100ms between Spotify requests to avoid rate limiting
+let _lastRequestTime = 0;
+const MIN_REQUEST_INTERVAL_MS = 100;
+
 /**
  * Make an authenticated request to the Spotify API.
  * Automatically refreshes the token on 401.
+ * Retries with backoff on 429 (rate limit).
  */
 async function spotifyFetch(endpoint, options = {}) {
+  // Throttle: ensure minimum interval between requests
+  const now = Date.now();
+  const wait = MIN_REQUEST_INTERVAL_MS - (now - _lastRequestTime);
+  if (wait > 0) await new Promise(r => setTimeout(r, wait));
+  _lastRequestTime = Date.now();
+
   let token = await getValidAccessToken();
   if (!token) throw new Error('Not authenticated with Spotify');
 
@@ -25,6 +36,21 @@ async function spotifyFetch(endpoint, options = {}) {
   // Auto-refresh on 401
   if (response.status === 401) {
     token = await refreshAccessToken();
+    response = await fetch(`${BASE_URL}${endpoint}`, {
+      ...options,
+      headers: {
+        'Authorization': `Bearer ${token}`,
+        ...options.headers,
+      },
+    });
+  }
+
+  // Retry on 429 with Retry-After header (or 2s default)
+  if (response.status === 429) {
+    const retryAfter = parseInt(response.headers.get('Retry-After') || '2', 10);
+    console.warn(`Spotify: Rate limited. Retrying in ${retryAfter}s...`);
+    await new Promise(r => setTimeout(r, retryAfter * 1000));
+    _lastRequestTime = Date.now();
     response = await fetch(`${BASE_URL}${endpoint}`, {
       ...options,
       headers: {

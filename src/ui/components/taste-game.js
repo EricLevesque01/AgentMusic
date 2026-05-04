@@ -969,28 +969,24 @@ export class TasteGame {
                 calibrateSearch.value = '';
                 calibrateSearch.placeholder = 'Loading...';
                 
-                // Fetch full artist to get tags (our searchArtist function handles Last.fm tags)
+                // Fetch full artist data (searchArtist enriches with Last.fm tags)
                 const fullArtist = await searchArtist(artist.name);
                 if (fullArtist) {
+                  // Add to allArtists pool if not already present
                   if (!this.allArtists.some(a => a.id === fullArtist.id)) {
                     fullArtist.isConciergePick = true;
                     this.allArtists.push(fullArtist);
                   }
-                  
-                  const eloRatings = DataStore.getEloRatings();
-                  const knownRanked = this.knownArtists
-                    .filter(a => eloRatings[a.id])
-                    .sort((a, b) => eloRatings[b.id].rating - eloRatings[a.id].rating);
-                    
-                  this.calibrationTask = { 
-                    targetId: fullArtist.id, 
-                    low: 0, 
-                    high: Math.max(0, knownRanked.length - 1),
-                    mid: -1
-                  };
+
+                  // Push to injectedQueue so _selectStrategicPair uses them
+                  // with highest priority in the very next matchup
+                  this.injectedQueue.push(fullArtist);
+
+                  calibrateSearch.placeholder = 'Search artist…';
                   this.nextRound();
                 } else {
-                  calibrateSearch.placeholder = 'Error loading artist';
+                  calibrateSearch.placeholder = 'Artist not found — try another name';
+                  setTimeout(() => { calibrateSearch.placeholder = 'Search artist…'; }, 2500);
                 }
               });
               

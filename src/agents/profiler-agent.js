@@ -42,6 +42,13 @@ export class ProfilerAgent {
    * via Last.fm tags in Phase 5.
    */
   async buildTasteState(onThought = null) {
+    // Return cached state if available and valid
+    const cached = DataStore.load('taste_state_cache');
+    if (cached) {
+      if (onThought) onThought("Profiler: Loaded taste state from cache.");
+      return cached;
+    }
+
     if (onThought) onThought("Profiler: Compiling long-term user taste state...");
     // --- Perceive: Fetch data ---
     let artists = DataStore.getTopArtists();
@@ -196,6 +203,9 @@ export class ProfilerAgent {
         console.debug('EmbeddingStore: Background index skipped:', err.message)
       );
     }
+
+    // Cache the fully built TasteState for 1 hour to prevent constant regeneration
+    DataStore.save('taste_state_cache', tasteState, 60 * 60 * 1000);
 
     return tasteState;
   }

@@ -146,10 +146,20 @@ export class ProfilerAgent {
     // --- Act: Produce TasteState ---
     const topGenres = this._extractTopGenres(artists);
     
-    // Sort all artists by their live Elo ratings to establish true dynamic taste
+    // Sort all artists by confidence-weighted Elo ratings.
+    // Artists with very few comparisons are regressed toward 1500 (the mean) so that
+    // a single lucky win doesn't catapult them to #1. Confidence grows with comparisons.
+    const _confidenceElo = (data) => {
+      const raw = data.rating || 1500;
+      const comps = data.comparison_count || 0;
+      // Bayesian-style: blend raw Elo with the prior (1500) weighted by confidence.
+      // After ~6 comparisons the confidence is ~0.86; after 10 it's ~0.91.
+      const confidence = 1 - Math.exp(-comps / 5);
+      return 1500 * (1 - confidence) + raw * confidence;
+    };
     const allRanked = Object.values(eloRatings)
       .filter(a => a.name && a.name !== 'undefined')
-      .sort((a, b) => (b.rating - a.rating) || (a.name || '').localeCompare(b.name || ''));
+      .sort((a, b) => _confidenceElo(b) - _confidenceElo(a) || (a.name || '').localeCompare(b.name || ''));
     
     // Build highly actionable Taste Tiers for the LLM
     const tasteTiers = {
@@ -377,8 +387,16 @@ export class ProfilerAgent {
    */
   getTopRankedArtists(n = 20) {
     const ratings = DataStore.getEloRatings();
+    // Confidence-weighted sort: regress toward 1500 for low-comparison artists
+    // so a single lucky win doesn't make someone appear as #1.
+    const _confidenceElo = (data) => {
+      const raw = data.rating || 1500;
+      const comps = data.comparison_count || 0;
+      const confidence = 1 - Math.exp(-comps / 5);
+      return 1500 * (1 - confidence) + raw * confidence;
+    };
     return Object.entries(ratings)
-      .sort((a, b) => (b[1].rating - a[1].rating) || (a[1].name || '').localeCompare(b[1].name || ''))
+      .sort((a, b) => _confidenceElo(b[1]) - _confidenceElo(a[1]) || (a[1].name || '').localeCompare(b[1].name || ''))
       .slice(0, n)
       .map(([id, data]) => ({ id, ...data }));
   }

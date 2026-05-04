@@ -159,6 +159,54 @@ export class ScoutAgent {
       }
     }
 
+    // --- Targeted intent-aware expansion for small pools ---
+    // If the intent override produced some tracks but not enough for a full playlist,
+    // expand from the INTENT-SOURCED artists via Last.fm similar artists.
+    // This is different from seed expansion: it finds more artists in the same vein
+    // as what the LLM identified, not the user's top-Elo library artists.
+    const MIN_POOL_FOR_PLAYLIST = 15;
+    if (intentOverrideActive && candidatePool.length > 0 && candidatePool.length < MIN_POOL_FOR_PLAYLIST) {
+      if (onThought) onThought(`Scout: Pool has ${candidatePool.length} tracks — expanding from intent-sourced artists via Last.fm…`);
+      // Get unique artist names from the current pool
+      const poolArtistNames = [...new Set(candidatePool.map(c => c.artistName).filter(Boolean))];
+      const expansionSeeds = poolArtistNames.slice(0, 4); // Expand from up to 4 seed artists
+
+      for (const seedName of expansionSeeds) {
+        try {
+          const similar = await getSimilarArtists(seedName, 8);
+          for (const simArtist of similar) {
+            try {
+              const resolved = await resolveArtist(simArtist.name);
+              if (!resolved) continue;
+              const tracks = await getTopTracks(resolved.id, resolved.name);
+              for (const track of (tracks || []).slice(0, 3)) {
+                if (!seenTrackIds.has(track.id)) {
+                  seenTrackIds.add(track.id);
+                  candidatePool.push({
+                    track,
+                    artistName: resolved.name,
+                    artistId: resolved.id,
+                    source: 'intent_similar_expansion',
+                    hopDistance: 1,
+                    eloScore: 1700,
+                    tags: [],
+                  });
+                }
+              }
+            } catch (e) {
+              // Skip individual artist failures
+            }
+            // Stop expanding once we have enough
+            if (candidatePool.length >= MIN_POOL_FOR_PLAYLIST * 2) break;
+          }
+        } catch (err) {
+          console.debug(`Scout: Similar expansion from "${seedName}" failed:`, err.message);
+        }
+        if (candidatePool.length >= MIN_POOL_FOR_PLAYLIST * 2) break;
+      }
+      if (onThought) onThought(`Scout: Expanded pool to ${candidatePool.length} candidates via similar-artist discovery`);
+    }
+
     // --- Web-Grounded Discovery: Search the real internet for topical connections ---
     // Only run if the intent override didn't already produce a focused pool
     if (!intentOverrideActive && seedArtists.length > 0) {

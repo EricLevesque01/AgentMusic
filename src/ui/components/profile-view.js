@@ -231,7 +231,7 @@ export class ProfileView {
           <!-- Genre Radar Chart (Canvas) -->
           <div class="glass-card" style="padding: var(--space-5);">
             <h3 style="font-size: var(--font-size-base); margin-bottom: var(--space-4); display: flex; align-items: center; gap: var(--space-2);">
-              <span style="display: flex; color: var(--accent-primary); font-size: 20px;">🎸</span> Genre Radar
+              Genre Radar
             </h3>
             <div style="display: flex; justify-content: center; align-items: center;">
               <canvas id="genre-radar-canvas" width="320" height="320" style="max-width: 100%;"></canvas>
@@ -241,7 +241,7 @@ export class ProfileView {
           <!-- Dynamic Tier List -->
           <div class="glass-card" style="padding: var(--space-5); display: flex; flex-direction: column; gap: 4px; background: var(--bg-panel);">
             <h3 style="font-size: var(--font-size-base); margin-bottom: var(--space-3); display: flex; align-items: center; gap: var(--space-2);">
-              <span style="display: flex; color: var(--accent-primary); font-size: 20px;">📊</span> The Tier List
+              The Tier List
             </h3>
             ${this._renderDynamicTierRow('S', stats.sTier, '#ff7f7f')}
             ${this._renderDynamicTierRow('A', stats.aTier, '#ffbf7f')}

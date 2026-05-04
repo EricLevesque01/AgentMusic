@@ -24,6 +24,23 @@ import { UserModel } from './user-model.js';
 import { DataStore } from '../data/data-store.js';
 import { buildTasteBrief } from './taste-brief.js';
 
+
+/**
+ * Convert a raw session intent into a readable playlist title.
+ * Capitalizes the first letter and trims cleanly at a word boundary
+ * (never mid-word) up to 100 chars, avoiding the "...from artis" problem.
+ */
+function _titleFromIntent(intent) {
+  if (!intent) return null;
+  const s = intent.trim();
+  if (s.length <= 100) return s.charAt(0).toUpperCase() + s.slice(1);
+  // Trim to last word boundary before 100 chars
+  const truncated = s.slice(0, 100);
+  const lastSpace = truncated.lastIndexOf(' ');
+  const clean = lastSpace > 60 ? truncated.slice(0, lastSpace) : truncated;
+  return clean.charAt(0).toUpperCase() + clean.slice(1);
+}
+
 export class Orchestrator {
   constructor(statusCallback = null, thoughtCallback = null) {
     this.statusCallback = statusCallback;
@@ -215,7 +232,7 @@ export class Orchestrator {
         // Prefer the Curator's generated name; fall back to intent text before the generic string
         playlistTitle: context.scoredPlaylist.playlistName
           || context.playlistName
-          || (context.sessionIntent ? context.sessionIntent.slice(0, 60) : null)
+          || (context.sessionIntent ? _titleFromIntent(context.sessionIntent) : null)
           || 'Your Playlist',
         playlistSummary: context.scoredPlaylist.playlistSummary
           || context.curatorReflection

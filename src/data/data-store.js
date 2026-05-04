@@ -278,7 +278,7 @@ export class DataStore {
       listenedAt: null,
       intent,
       source,
-      title: context.explanations?.playlistTitle || context.playlistName || intent.slice(0, 60) || 'Curated Mix',
+      title: context.explanations?.playlistTitle || context.playlistName || intent.slice(0, 100) || 'Curated Mix',
       trackCount: context.scoredPlaylist?.length || 0,
       curatorReflection: context.curatorReflection || '',
       context: serializable,

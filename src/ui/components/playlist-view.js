@@ -12,56 +12,6 @@ export class PlaylistView {
     this._listenStart = null;
   }
 
-  /**
-   * Sprint 5.1: Render provenance badges for a track card.
-   * Makes the pipeline's reasoning visible — discovery vs seed, cultural vs graph.
-   */
-  _renderTrackBadges(candidate) {
-    const { hopDistance = 0, source = '' } = candidate;
-    const badges = [];
-
-    // Source type
-    if (['web_discovery', 'cultural_discovery'].includes(source)) {
-      badges.push(`<span title="Found via live web research" style="
-        display:inline-flex;align-items:center;gap:3px;
-        background:rgba(99,102,241,0.18);color:#a5b4fc;
-        border:1px solid rgba(99,102,241,0.3);
-        border-radius:999px;padding:2px 8px;font-size:10px;font-weight:600;
-        letter-spacing:0.03em;white-space:nowrap;
-      ">🌐 Web</span>`);
-    } else if (source === 'graph_hop') {
-      badges.push(`<span title="Found via taste graph traversal" style="
-        display:inline-flex;align-items:center;gap:3px;
-        background:rgba(16,185,129,0.15);color:#6ee7b7;
-        border:1px solid rgba(16,185,129,0.25);
-        border-radius:999px;padding:2px 8px;font-size:10px;font-weight:600;
-        letter-spacing:0.03em;white-space:nowrap;
-      ">🗺️ Graph</span>`);
-    } else if (hopDistance >= 1) {
-      badges.push(`<span title="Discovery: ${hopDistance} hop${hopDistance > 1 ? 's' : ''} from your taste" style="
-        display:inline-flex;align-items:center;gap:3px;
-        background:rgba(245,158,11,0.15);color:#fcd34d;
-        border:1px solid rgba(245,158,11,0.25);
-        border-radius:999px;padding:2px 8px;font-size:10px;font-weight:600;
-        letter-spacing:0.03em;white-space:nowrap;
-      ">🔍 Discovery${hopDistance > 1 ? ` ×${hopDistance}` : ''}</span>`);
-    }
-
-    // Anti-repetition freshness — if this is a seed artist (hop 0) and new to playlists
-    if (hopDistance === 0 && !['web_discovery', 'cultural_discovery', 'graph_hop'].includes(source)) {
-      badges.push(`<span title="A core artist from your taste profile" style="
-        display:inline-flex;align-items:center;gap:3px;
-        background:rgba(61,139,255,0.12);color:#93c5fd;
-        border:1px solid rgba(61,139,255,0.2);
-        border-radius:999px;padding:2px 8px;font-size:10px;font-weight:600;
-        letter-spacing:0.03em;white-space:nowrap;
-      ">⭐ Taste Pick</span>`);
-    }
-
-    return badges.length > 0
-      ? `<div style="display:flex;flex-wrap:wrap;gap:4px;margin-top:var(--space-2);">${badges.join('')}</div>`
-      : '';
-  }
 
   /** Detect boilerplate curator reflection strings. */
   _isGenericReflection(text) {
@@ -223,7 +173,6 @@ export class PlaylistView {
                         white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:var(--text-bright);">${track.name}</div>
             <div style="font-size:var(--font-size-sm);color:var(--text-secondary);margin-top:2px;${explanation ? 'margin-bottom:var(--space-2)' : ''};">${artistName}</div>
             ${explanation ? `<p style="font-size:var(--font-size-sm);color:var(--text-primary);line-height:1.5;">${explanation}</p>` : ''}
-            ${this._renderTrackBadges(candidate)}
             ${previewUrl ? `
             <div style="margin-top:var(--space-2);">
               <audio id="audio-pl-${index}" src="${previewUrl}" preload="none"></audio>

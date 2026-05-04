@@ -66,11 +66,11 @@ export class CuratorAgent {
     if (/deep.?dive.*into|all\s+\w|only\s+\w|just\s+\w|discography|catalog|everything by|check.?out|listen to|try\s+\w|friend.*told|recommend|heard about|got.?into/i.test(intent)) {
       return {
         intentType: 'artist_focus',
-        targetTracks: '8-20 — as many as the artist deserves',
-        maxPerArtist: 'no limit — this is an artist-focused request',
+        targetTracks: '12-20 — aim for the upper end; this is a deep-dive',
+        maxPerArtist: 'no limit for the PRIMARY artist — this is an artist-focused request',
         maxPerArtistNum: 99,
-        diversityNote: 'The user wants to hear THIS artist. The majority of tracks should be from the named artist. Add a few related artists for context, but the focus is on the requested artist.',
-        eraNote: 'Span the artist\'s career — include early, peak, and recent work.',
+        diversityNote: 'The user wants to hear THIS artist. The PRIMARY artist should dominate — aim for 10-15 tracks from them. Supporting/related artists are context only: MAX 2 tracks per supporting artist, MAX 4 supporting-artist tracks total across the whole playlist.',
+        eraNote: 'Span the artist\'s career — include early, peak, and recent work if available.',
       };
     }
 
@@ -328,6 +328,12 @@ Return a single JSON object:
 }
 
 AIM FOR THE UPPER END of the target track range. A 15-track playlist is significantly better than a 10-track one — more tracks = more value. Only go below the minimum if the pool genuinely doesn't have enough quality tracks.
+${params.intentType === 'artist_focus' ? `
+ARTIST FOCUS HARD RULE: Count your tracks before finalizing:
+- Primary requested artist: use as many tracks as the pool contains (target 10-15)
+- Supporting/context artists: max 2 tracks each, max 4 total across the entire playlist
+- If you have 10+ tracks from the primary artist, include them ALL before reaching for supporting acts
+` : ''}
 Return ONLY valid JSON.`;
 
     const userMessage = `Candidate Pool (${cleanPool.length} tracks available — choose liberally):\n${JSON.stringify(poolForPrompt, null, 2)}`;

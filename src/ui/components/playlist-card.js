@@ -39,7 +39,7 @@ function pickGradient(intent = '', reflection = '') {
  * @param {function} onClick — callback when card is clicked
  * @returns {HTMLElement}
  */
-export function createPlaylistCard(playlist, onClick) {
+export function createPlaylistCard(playlist, onClick, onDismiss) {
   const card = document.createElement('div');
   card.className = 'playlist-card glass-card glow';
   card.dataset.playlistId = playlist.id;
@@ -61,12 +61,51 @@ export function createPlaylistCard(playlist, onClick) {
         <span>${date}</span>
       </div>
     </div>
+    <button class="playlist-card-dismiss" title="Remove from feed"
+      style="
+        position:absolute;top:8px;right:8px;
+        width:26px;height:26px;
+        border-radius:50%;
+        border:1px solid rgba(255,255,255,0.15);
+        background:rgba(0,0,0,0.45);
+        color:rgba(255,255,255,0.7);
+        font-size:14px;line-height:1;
+        cursor:pointer;
+        display:flex;align-items:center;justify-content:center;
+        opacity:0;
+        transition:opacity 0.18s ease, background 0.15s ease;
+        z-index:10;
+      "
+    >×</button>
   `;
+
+  // Hover reveals dismiss button
+  card.addEventListener('mouseenter', () => {
+    card.querySelector('.playlist-card-dismiss').style.opacity = '1';
+  });
+  card.addEventListener('mouseleave', () => {
+    card.querySelector('.playlist-card-dismiss').style.opacity = '0';
+  });
+
+  // Dismiss button: animate out → delete → re-render
+  card.querySelector('.playlist-card-dismiss').addEventListener('click', (e) => {
+    e.stopPropagation(); // don't open the playlist
+    card.style.transition = 'opacity 200ms ease, transform 200ms ease';
+    card.style.opacity = '0';
+    card.style.transform = 'scale(0.92)';
+    setTimeout(() => {
+      card.remove();
+      if (onDismiss) onDismiss(playlist.id);
+    }, 210);
+  });
 
   card.addEventListener('click', () => onClick(playlist));
   card.addEventListener('keydown', (e) => {
     if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onClick(playlist); }
   });
+
+  // Needed for the absolute dismiss button to position correctly
+  card.style.position = 'relative';
 
   return card;
 }

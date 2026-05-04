@@ -212,7 +212,11 @@ export class Orchestrator {
         trackMap.set(c.track.id, c.dominantFactor || `Selected for the "${context.sessionIntent}" session.`);
       }
       context.explanations = {
-        playlistTitle: context.playlistName || 'Curated Playlist',
+        // Prefer the Curator's generated name; fall back to intent text before the generic string
+        playlistTitle: context.scoredPlaylist.playlistName
+          || context.playlistName
+          || (context.sessionIntent ? context.sessionIntent.slice(0, 60) : null)
+          || 'Your Playlist',
         playlistSummary: context.scoredPlaylist.playlistSummary
           || context.curatorReflection
           || `A custom mix of ${context.scoredPlaylist.length} tracks based on your taste graph.`,

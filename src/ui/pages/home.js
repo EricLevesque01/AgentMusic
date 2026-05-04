@@ -55,6 +55,64 @@ export function renderHomePage(container) {
   const statsEl = document.getElementById('discovery-stats');
   const playlistView = new PlaylistView(detailEl);
 
+  /**
+   * Record a dismiss as a negative preference signal.
+   * - session_signals.skippedGenres → Scout filters these from the next candidate pool
+   * - agent_memories               → Curator/Concierge/SuggestedArtists remember across sessions
+   */
+  function _recordDismissSignal(playlist) {
+    // 1. Extract genre signals from intent text + track tags
+    const intentText = (playlist.intent || playlist.title || '').toLowerCase();
+    const trackTags = [];
+    const tracks = playlist.context?.scoredPlaylist || [];
+    for (const c of tracks) {
+      for (const t of (c.tags || [])) {
+        const name = typeof t === 'object' ? t.name : t;
+        if (name) trackTags.push(name.toLowerCase());
+      }
+    }
+
+    // Tally tag frequency; take top 3
+    const freq = {};
+    for (const tag of trackTags) freq[tag] = (freq[tag] || 0) + 1;
+    const topTags = Object.entries(freq)
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 3)
+      .map(([g]) => g);
+
+    // Also check intent text for genre keywords
+    const GENRE_KEYWORDS = ['rock', 'jazz', 'pop', 'indie', 'electronic', 'folk', 'metal',
+      'classical', 'hip hop', 'r&b', 'soul', 'country', 'ambient', 'punk', 'reggae',
+      'blues', 'funk', 'dance', 'alternative', 'post-punk', 'shoegaze', 'lo-fi'];
+    const intentGenres = GENRE_KEYWORDS.filter(g => intentText.includes(g));
+
+    const genres = [...new Set([...topTags, ...intentGenres])].slice(0, 4);
+
+    // 2. Write to session_signals.skippedGenres (immediate — Scout reads this next run)
+    if (genres.length > 0) {
+      const signals = DataStore.getSessionSignals();
+      signals.skippedGenres = [...new Set([...(signals.skippedGenres || []), ...genres])];
+      DataStore.setSessionSignals(signals);
+    }
+
+    // 3. Write a persistent memory note (Curator + Concierge read agent_memories)
+    const dateStr = new Date().toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+    const genreNote = genres.length > 0 ? `(${genres.slice(0, 2).join(', ')})` : '';
+    const intentSnippet = (playlist.intent || playlist.title || '').slice(0, 50);
+    const memory = `[${dateStr}] Not interested in: "${intentSnippet}" ${genreNote} — user dismissed this from their feed`;
+
+    const prefs = DataStore.getExplicitPreferences();
+    prefs.agent_memories = prefs.agent_memories || [];
+    // Avoid duplicate memory entries for the same playlist
+    const alreadyNoted = prefs.agent_memories.some(m => m.includes(intentSnippet));
+    if (!alreadyNoted) {
+      prefs.agent_memories.push(memory);
+      // Cap at 30 memories to avoid prompt bloat
+      if (prefs.agent_memories.length > 30) prefs.agent_memories.shift();
+      DataStore.setExplicitPreferences(prefs);
+    }
+  }
+
   // === Render playlist grid ===
   function renderGrid() {
     const library = DataStore.getPlaylistLibrary();
@@ -96,7 +154,23 @@ export function renderHomePage(container) {
 
     gridEl.innerHTML = '';
     for (const p of playlists) {
-      const card = createPlaylistCard(p, (playlist) => openPlaylistDetail(playlist));
+      const card = createPlaylistCard(
+        p,
+        (playlist) => openPlaylistDetail(playlist),
+        (id) => {
+          // Record the dismiss as a taste signal BEFORE deleting
+          const dismissed = playlists.find(x => x.id === id);
+          if (dismissed) _recordDismissSignal(dismissed);
+          // Delete from both stores (library + legacy)
+          DataStore.deleteSavedPlaylist(id);
+          const library = DataStore.getPlaylistLibrary().filter(x => x.id !== id);
+          DataStore.save('playlist_library', library);
+          // Refresh stats after dismiss (card already removed itself from DOM)
+          renderStats();
+          // Show empty state if nothing left
+          if (library.length === 0 && DataStore.getSavedPlaylists().length === 0) renderGrid();
+        }
+      );
       gridEl.appendChild(card);
     }
 

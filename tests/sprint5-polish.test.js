@@ -10,15 +10,16 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 // --- Sprint 5.1: Playlist DNA Badges ---
 describe('Sprint 5.1 — Track DNA Badges', () => {
-  it('PlaylistView has a _renderTrackBadges() method', async () => {
+  it('PlaylistView does not render provenance badges (intentionally removed for cleaner UI)', async () => {
     const fs = await import('fs');
     const path = await import('path');
     const src = fs.readFileSync(path.resolve('./src/ui/components/playlist-view.js'), 'utf-8');
-    expect(src).toContain('_renderTrackBadges');
-    expect(src).toContain('web_discovery');
-    expect(src).toContain('cultural_discovery');
-    expect(src).toContain('graph_hop');
-    expect(src).toContain('hopDistance');
+    // Badges were removed by design — track cards should be clean
+    expect(src).not.toContain('_renderTrackBadges');
+    expect(src).not.toContain('Taste Pick');
+    // But the generic text filters are still present
+    expect(src).toContain('_isGenericReflection');
+    expect(src).toContain('_isGenericText');
   });
 
   it('PlaylistView uses dynamic title with multi-level fallback', async () => {

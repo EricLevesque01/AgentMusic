@@ -73,16 +73,16 @@ export function renderPlaylistPage(container) {
   // Render Library
   function renderLibrary() {
     const listEl = document.getElementById('saved-playlists-list');
-    const playlists = DataStore.getSavedPlaylists();
+    const playlists = DataStore.getPlaylistLibrary();
     if (playlists.length === 0) {
       listEl.innerHTML = `<div style="text-align:center; padding:var(--space-6); color:var(--text-muted);">No playlists yet. Generate one above!</div>`;
       return;
     }
 
     listEl.innerHTML = playlists.map(p => {
-      const title = p.context?.explanations?.playlistTitle || p.context?.playlistTitle || (p.context?.sessionIntent?.slice(0, 60) || 'Curated Playlist');
-      const desc = p.context?.curatorReflection || p.context?.explanations?.playlistSummary || p.context?.playlistSummary || '';
-      const trackCount = p.context?.scoredPlaylist?.length || 0;
+      const title = p.title || p.context?.explanations?.playlistTitle || p.context?.playlistName || (p.intent?.slice(0, 60) || 'Curated Playlist');
+      const desc = p.curatorReflection || p.context?.curatorReflection || p.context?.explanations?.playlistSummary || '';
+      const trackCount = p.trackCount || p.context?.scoredPlaylist?.length || 0;
       const date = new Date(p.createdAt).toLocaleDateString();
       return `
         <div class="glass-card" style="padding:var(--space-4); display:flex; justify-content:space-between; align-items:center;">
@@ -116,7 +116,7 @@ export function renderPlaylistPage(container) {
     listEl.querySelectorAll('.view-btn').forEach(btn => {
       btn.addEventListener('click', (e) => {
         const id = e.currentTarget.dataset.id;
-        const p = DataStore.getSavedPlaylists().find(x => x.id === id);
+        const p = DataStore.getPlaylistLibrary().find(x => x.id === id);
         if (p) {
           window.TG.lastContext = p.context;
           playlistView.render(p.context);
@@ -149,7 +149,7 @@ export function renderPlaylistPage(container) {
     listEl.querySelectorAll('.export-btn').forEach(btn => {
       btn.addEventListener('click', async (e) => {
         const id = e.currentTarget.dataset.id;
-        const p = DataStore.getSavedPlaylists().find(x => x.id === id);
+        const p = DataStore.getPlaylistLibrary().find(x => x.id === id);
         if (!p) return;
         
         const originalText = e.currentTarget.innerHTML;

@@ -82,6 +82,7 @@ export class CuratorAgent {
       params = {
         intentType: 'artist_focus',
         targetTracks: '10-15 — use your judgment based on the artist\'s catalog depth',
+        maxPerArtistNum: 10,
         diversityNote: 'The user wants to hear THIS artist. The PRIMARY artist should absolutely dominate the playlist (up to 100% of tracks if appropriate). If the overall track count is low, just stick to the requested artist. Supporting artists are only context and should be sparse.',
         eraNote: 'Span the artist\'s career — include early, peak, and recent work if available.',
       };
@@ -92,6 +93,7 @@ export class CuratorAgent {
       params = {
         intentType: 'genre_exploration',
         targetTracks: '12-16 — enough to give a real tour of the genre',
+        maxPerArtistNum: 2,
         diversityNote: 'Genre exploration demands MAXIMUM DIVERSITY. Mix it up completely. Every track should ideally be from a different artist to provide a broad survey of the style.',
         eraNote: 'Span multiple decades and sub-styles.',
       };
@@ -101,7 +103,8 @@ export class CuratorAgent {
     else if (/stud|work.?out|gym|driv|cook|relax|sleep|focus|chill|party|dinner|morning|night|run|jog|meditat/i.test(intent)) {
       params = {
         intentType: 'mood_activity',
-        targetTracks: '15-30 — choose a length that fits the mood (e.g. tight 15 for focus, 25+ for a party)',
+        targetTracks: '10-15 — choose a length that fits the mood',
+        maxPerArtistNum: 4,
         diversityNote: 'Be highly intentional about clustering. If an artist perfectly captures the mood, include a "mini-dive" of 3-5 tracks from them rather than artificially jumping around. If the playlist is short, it\'s perfectly fine if it only features 2 or 3 artists total.',
         eraNote: 'Era is less important than mood cohesion.',
       };
@@ -110,9 +113,10 @@ export class CuratorAgent {
     // Default / general
     else {
       params = {
-        intentType: 'mood_theme',
+        intentType: 'general',
         targetTracks: '10-15 — maintain a highly consistent vibe',
-        diversityNote: 'Focus heavily on vibe/mood consistency. It is okay to repeat artists if they strongly fit the mood.',
+        maxPerArtistNum: 3,
+        diversityNote: 'Balance familiarity with discovery. Do not artificially force diversity — if 3 or 4 tracks from a core artist anchor the vibe perfectly, group them together.',
         eraNote: 'No specific era constraints. Let the intent guide temporal choices.',
       };
     }
@@ -415,11 +419,11 @@ Return ONLY valid JSON.`;
         curatorReflection = parsed.reflection;
         if (onThought) onThought(`Curator Reflection: ${curatorReflection}`);
       }
-      if (parsed.playlistName) {
-        playlistName = parsed.playlistName;
+      if (parsed.playlistName || parsed.name || parsed.title) {
+        playlistName = parsed.playlistName || parsed.name || parsed.title;
       }
-      if (parsed.playlistSummary) {
-        playlistSummary = parsed.playlistSummary;
+      if (parsed.playlistSummary || parsed.summary || parsed.description) {
+        playlistSummary = parsed.playlistSummary || parsed.summary || parsed.description;
       }
       const tracksArray = parsed.playlist || parsed.tracks || parsed.items || parsed.songs || (Array.isArray(parsed) ? parsed : []);
       selectedIds = tracksArray.map(p => p.id);
@@ -439,11 +443,11 @@ Return ONLY valid JSON.`;
         if (parsed.reflection) {
           curatorReflection = parsed.reflection;
         }
-        if (parsed.playlistName) {
-          playlistName = parsed.playlistName;
+        if (parsed.playlistName || parsed.name || parsed.title) {
+          playlistName = parsed.playlistName || parsed.name || parsed.title;
         }
-        if (parsed.playlistSummary) {
-          playlistSummary = parsed.playlistSummary;
+        if (parsed.playlistSummary || parsed.summary || parsed.description) {
+          playlistSummary = parsed.playlistSummary || parsed.summary || parsed.description;
         }
         const tracksArray = parsed.playlist || parsed.tracks || parsed.items || parsed.songs || (Array.isArray(parsed) ? parsed : []);
         selectedIds = tracksArray.map(p => p.id);

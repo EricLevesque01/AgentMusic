@@ -217,12 +217,22 @@ export class DataStore {
   }
 
   static _serializeContext(context) {
+    // Deep-clone scoredPlaylist to break shared references with candidatePool.
+    // Without this, JSON.stringify may silently drop tracks that share object refs.
+    let clonedPlaylist = [];
+    try {
+      clonedPlaylist = JSON.parse(JSON.stringify(context.scoredPlaylist || []));
+    } catch (e) {
+      console.warn('DataStore: scoredPlaylist clone failed, using shallow copy.', e);
+      clonedPlaylist = context.scoredPlaylist || [];
+    }
+
     return {
       sessionIntent: context.sessionIntent,
       playlistName: context.playlistName,
       curatorReflection: context.curatorReflection,
-      scoredPlaylist: context.scoredPlaylist,
-      blackboard: context.blackboard,
+      scoredPlaylist: clonedPlaylist,
+      // Note: blackboard intentionally excluded — too large for localStorage.
       explanations: {
         playlistTitle: context.explanations?.playlistTitle,
         playlistSummary: context.explanations?.playlistSummary,
@@ -233,7 +243,7 @@ export class DataStore {
     };
   }
 
-  static saveGeneratedPlaylist(context) {
+  static saveGeneratedPlaylist(context, sharedId = null) {
     let serializable;
     try {
       serializable = this._serializeContext(context);
@@ -243,14 +253,15 @@ export class DataStore {
     }
 
     const playlists = this.getSavedPlaylists();
+    const id = sharedId || Date.now().toString();
     const newPlaylist = {
-      id: Date.now().toString(),
+      id,
       createdAt: Date.now(),
       context: serializable
     };
     playlists.unshift(newPlaylist);
     this.save('saved_playlists', playlists);
-    return newPlaylist.id;
+    return id;
   }
 
   static deleteSavedPlaylist(id) {
@@ -311,8 +322,8 @@ export class DataStore {
 
     this.save('playlist_library', library);
 
-    // Also save to legacy format for backward compat
-    this.saveGeneratedPlaylist(context);
+    // Also save to legacy format for backward compat (shared ID for cross-store lookups)
+    this.saveGeneratedPlaylist(context, entry.id);
 
     return entry.id;
   }

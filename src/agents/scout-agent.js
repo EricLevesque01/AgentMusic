@@ -362,13 +362,13 @@ export class ScoutAgent {
 
     if (newDiscoveries.length === 0) return;
 
-    const { resolveTrack } = await import('../data/track-resolver.js');
-    const { getTopTracks } = await import('../data/spotify-api.js');
-
+    // Use resolveArtist + getTopTracks from track-resolver (imported at top of file)
+    // NOT the raw spotify-api — that bypasses the request queue and rate-limit protection.
     for (const discovery of newDiscoveries) {
       try {
-        // Fetch 2-3 top tracks from this artist for a taste of their sound
-        const tracks = await getTopTracks(discovery.name, 3);
+        const artist = await resolveArtist(discovery.name);
+        if (!artist) continue;
+        const tracks = await getTopTracks(artist.id, artist.name, 3);
         if (!tracks || tracks.length === 0) continue;
 
         for (const track of tracks) {

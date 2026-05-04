@@ -902,7 +902,7 @@ export class TasteGame {
         <p style="font-size: var(--font-size-xs); color: var(--text-muted); margin-bottom: var(--space-2);">Calibrate a specific artist</p>
         <div style="position: relative; width: 100%; max-width: 300px;">
           <input type="text" id="calibrate-search" placeholder="Search artist…" style="width: 100%; padding: 8px 16px; border-radius: var(--radius-full); border: 1px solid var(--border-glass); background: var(--bg-card); color: var(--text-primary); outline: none; font-size: var(--font-size-sm);" autocomplete="off">
-          <ul id="calibrate-dropdown" style="display: none; position: absolute; bottom: 100%; left: 0; right: 0; margin-bottom: 8px; background: var(--bg-secondary); border: 1px solid var(--border-glass); border-radius: var(--radius-md); max-height: 200px; overflow-y: auto; list-style: none; padding: 0; z-index: 100; box-shadow: var(--shadow-lg);"></ul>
+          <ul id="calibrate-dropdown" style="display: none; position: absolute; top: 100%; left: 0; right: 0; margin-top: 6px; background: var(--bg-secondary); border: 1px solid var(--border-glass); border-radius: var(--radius-md); max-height: 220px; overflow-y: auto; list-style: none; padding: 0; z-index: 100; box-shadow: var(--shadow-lg);"></ul>
         </div>
       </div>
     `;
@@ -1004,12 +1004,16 @@ export class TasteGame {
       }, 300);
     });
 
-    // Hide dropdown when clicking outside
+    // Hide dropdown when clicking outside — use AbortController so the listener
+    // is automatically removed when renderMatchup() replaces the DOM next round.
+    const abortCtrl = new AbortController();
     document.addEventListener('click', (e) => {
       if (calibrateSearch && !calibrateSearch.contains(e.target) && !calibrateDropdown.contains(e.target)) {
         calibrateDropdown.style.display = 'none';
+        // Clean up once hidden so stale listeners don’t pile up
+        abortCtrl.abort();
       }
-    });
+    }, { signal: abortCtrl.signal });
   }
 
   _renderCard(artist, imgUrl, badge = null) {

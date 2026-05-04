@@ -234,7 +234,7 @@ export class ProfileView {
               Genre Radar
             </h3>
             <div style="display: flex; justify-content: center; align-items: center;">
-              <canvas id="genre-radar-canvas" width="320" height="320" style="max-width: 100%;"></canvas>
+              <canvas id="genre-radar-canvas" width="400" height="320" style="max-width: 100%;"></canvas>
             </div>
           </div>
 

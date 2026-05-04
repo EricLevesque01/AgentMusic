@@ -243,11 +243,11 @@ export class ProfileView {
             <h3 style="font-size: var(--font-size-base); margin-bottom: var(--space-3); display: flex; align-items: center; gap: var(--space-2);">
               The Tier List
             </h3>
-            ${this._renderDynamicTierRow('S', stats.sTier, '#ff7f7f')}
-            ${this._renderDynamicTierRow('A', stats.aTier, '#ffbf7f')}
-            ${this._renderDynamicTierRow('B', stats.bTier, '#ffff7f')}
-            ${this._renderDynamicTierRow('C', stats.cTier, '#7fff7f')}
-            ${this._renderDynamicTierRow('F', stats.fTier, '#7fbfff')}
+            <div id="tier-row-S">${this._renderDynamicTierRow('S', stats.sTier, '#ff7f7f')}</div>
+            <div id="tier-row-A">${this._renderDynamicTierRow('A', stats.aTier, '#ffbf7f')}</div>
+            <div id="tier-row-B">${this._renderDynamicTierRow('B', stats.bTier, '#ffff7f')}</div>
+            <div id="tier-row-C">${this._renderDynamicTierRow('C', stats.cTier, '#7fff7f')}</div>
+            <div id="tier-row-F">${this._renderDynamicTierRow('F', stats.fTier, '#7fbfff')}</div>
           </div>
         </div>
 
@@ -282,7 +282,7 @@ export class ProfileView {
     const heroDesc = document.getElementById('hero-desc');
 
     const applyProfile = (profile) => {
-      // profile is a JSON object with { tagline, heroDescription, vibeAnalysis }
+      // profile is a JSON object with { tagline, heroDescription, vibeAnalysis, dynamicTiers }
       // fallback to raw string if the agent returned old format
       if (typeof profile === 'string') {
         if (el) el.innerHTML = profile;
@@ -290,6 +290,21 @@ export class ProfileView {
         if (el && profile.vibeAnalysis) el.innerHTML = profile.vibeAnalysis;
         if (heroTagline && profile.tagline) heroTagline.innerHTML = profile.tagline;
         if (heroDesc && profile.heroDescription) heroDesc.innerHTML = profile.heroDescription;
+        
+        if (profile.dynamicTiers) {
+          const mapToArtists = (names) => names.map(n => rankedArtists.find(a => a.name === n)).filter(Boolean);
+          const sTier = mapToArtists(profile.dynamicTiers.S || []);
+          const aTier = mapToArtists(profile.dynamicTiers.A || []);
+          const bTier = mapToArtists(profile.dynamicTiers.B || []);
+          const cTier = mapToArtists(profile.dynamicTiers.C || []);
+          const fTier = mapToArtists(profile.dynamicTiers.F || []);
+          
+          if (sTier.length) document.getElementById('tier-row-S').innerHTML = this._renderDynamicTierRow('S', sTier, '#ff7f7f');
+          if (aTier.length) document.getElementById('tier-row-A').innerHTML = this._renderDynamicTierRow('A', aTier, '#ffbf7f');
+          if (bTier.length) document.getElementById('tier-row-B').innerHTML = this._renderDynamicTierRow('B', bTier, '#ffff7f');
+          if (cTier.length) document.getElementById('tier-row-C').innerHTML = this._renderDynamicTierRow('C', cTier, '#7fff7f');
+          if (fTier.length) document.getElementById('tier-row-F').innerHTML = this._renderDynamicTierRow('F', fTier, '#7fbfff');
+        }
       }
     };
 

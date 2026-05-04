@@ -48,10 +48,11 @@ CULTURAL/HISTORICAL CONTEXT (Wikipedia RAG):
 ${wikiText || 'No biographical context available.'}
 
 YOUR TASK:
-Return a JSON object analyzing the user's taste with exactly these three keys:
+Return a JSON object analyzing the user's taste with exactly these four keys:
 1. "tagline": A punchy, 3-5 word capitalized tagline for their music taste. Use musical and cultural vocabulary — genre descriptors, scene references, artist archetypes, era markers. Avoid loaded emotional or suggestive adjectives. Examples of good taglines: "Post-Punk Classicist", "Indie Folk Archivist", "Art Rock True Believer", "Guitar-Driven Deep Diver".
 2. "heroDescription": A 1-2 sentence warm, celebratory summary of their top artist and overall vibe — enthusiastic, never ironic or edgy.
 3. "vibeAnalysis": 1 concise paragraph (max 4 sentences) analyzing their taste based on the dossier.
+4. "dynamicTiers": An object with keys "S", "A", "B", "C", "F" mapping to arrays of string artist names. Choose up to 4 highly representative artists per tier from the User Dossier lists above. You are curating the "face" of each tier for the UI. Pick artists that distinctly represent the sonic spread of that tier.
 
 CRITICAL RULES for vibeAnalysis:
 1. TONE: Warm, enthusiastic, and celebratory. Speak directly to them using "you". Be genuinely appreciative of their taste. Keep the register accessible and age-appropriate — avoid edgy, dark, or suggestive framings even if the music itself is melancholic.

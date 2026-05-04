@@ -284,6 +284,22 @@ ${userModelContext}
 ${memoriesStr}
 ${signalsStr}
 
+${(() => {
+  const history = context?.playlistHistory;
+  if (!history || history.length === 0) return '';
+  const lines = history.map((p, i) => {
+    const artists = p.topArtists.length > 0 ? ` — dominated by: ${p.topArtists.join(', ')}` : '';
+    return `  ${i + 1}. "${p.title}"${p.intent && p.intent !== p.title ? ` (intent: "${p.intent.slice(0, 60)}")` : ''}${artists}`;
+  });
+  return `PREVIOUSLY CURATED PLAYLISTS (your recent history — DO NOT repeat these directions):
+${lines.join('\n')}
+
+VARIETY MANDATE: The above playlists were already generated. For this new playlist:
+- Choose a DIFFERENT anchor artist than those that dominated recent playlists
+- Choose a DIFFERENT genre angle or emotional register than the ones above
+- If the same artist appears repeatedly in history, treat them as over-represented and deprioritize them
+- The goal is a collection of playlists that covers diverse territory, not multiple deep-dives into the same artist\n`;
+})()}
 SESSION INTENT: "${sessionIntent || 'General vibe'}"
 
 PLAYLIST PARAMETERS (determined by intent analysis):

@@ -458,6 +458,29 @@ export class Orchestrator {
         .filter(r => r.date > cutoff)
         .map(r => r.artist.toLowerCase());
     } catch (e) { context.recentPlaylistArtists = []; }
+
+    // Playlist history: compact summary of recently curated playlists
+    // Used by the Curator to avoid repeating the same thematic direction.
+    try {
+      const library = DataStore.getPlaylistLibrary().slice(0, 6);
+      context.playlistHistory = library.map(p => {
+        // Extract dominant artists from the scored playlist (top 3 by frequency)
+        const artistFreq = {};
+        for (const c of (p.context?.scoredPlaylist || [])) {
+          const name = c.artistName || '';
+          if (name) artistFreq[name] = (artistFreq[name] || 0) + 1;
+        }
+        const topArtists = Object.entries(artistFreq)
+          .sort((a, b) => b[1] - a[1])
+          .slice(0, 3)
+          .map(([name]) => name);
+        return {
+          title: p.title || p.intent || 'Untitled',
+          intent: p.intent || '',
+          topArtists,
+        };
+      });
+    } catch (e) { context.playlistHistory = []; }
   }
 
   _populateTasteProfile(context) {

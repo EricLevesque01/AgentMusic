@@ -408,7 +408,7 @@ Return ONLY valid JSON.`;
     try {
       if (onThought) onThought("Curator: Reflecting on constraints and selecting tracks...");
       const { callWithTools } = await import('../data/gemini-api.js');
-      const result = await callWithTools(systemPrompt, messages, [], 'fast', false, 'curator', CURATOR_RESPONSE_SCHEMA);
+      const result = await callWithTools(systemPrompt, messages, [], 'fast', false, 'curator', null);
       const parsed = extractJSON(result.textReply);
 
       if (parsed.reflection) {
@@ -432,7 +432,7 @@ Return ONLY valid JSON.`;
       try {
         if (onThought) onThought("Curator: Retrying selection...");
         const { callWithTools } = await import('../data/gemini-api.js');
-        const result = await callWithTools(systemPrompt, messages, [], 'fast', false, 'curator', CURATOR_RESPONSE_SCHEMA);
+        const result = await callWithTools(systemPrompt, messages, [], 'fast', false, 'curator', null);
 
         const parsed = extractJSON(result.textReply);
 

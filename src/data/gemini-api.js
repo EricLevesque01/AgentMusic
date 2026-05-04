@@ -69,32 +69,67 @@ async function _callGemini(systemPrompt, messages, toolDeclarations, modelTier, 
     },
   };
 
-  const response = await fetch(url, {
-    method:  'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body:    JSON.stringify(body),
-    signal:  AbortSignal.timeout(60000), // 60s timeout — prevents large JSON generation from timing out
-  });
+  // Retry with exponential backoff for timeouts, rate limits, and server errors
+  const MAX_RETRIES = 2;
+  const BASE_DELAY_MS = 2000;
+  let lastError;
 
-  if (!response.ok) {
-    const err = await response.json().catch(() => ({}));
-    throw new Error(`Gemini API error: ${err.error?.message || response.statusText}`);
+  for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+    try {
+      const response = await fetch(url, {
+        method:  'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body:    JSON.stringify(body),
+        signal:  AbortSignal.timeout(90000), // 90s timeout per attempt
+      });
+
+      // Retry on rate limit (429) or server errors (5xx)
+      if (response.status === 429 || response.status >= 500) {
+        const errBody = await response.json().catch(() => ({}));
+        lastError = new Error(`Gemini API error (${response.status}): ${errBody.error?.message || response.statusText}`);
+        if (attempt < MAX_RETRIES) {
+          const delay = BASE_DELAY_MS * Math.pow(2, attempt);
+          console.warn(`Gemini API ${response.status} — retrying in ${delay}ms (attempt ${attempt + 1}/${MAX_RETRIES + 1})`);
+          await new Promise(r => setTimeout(r, delay));
+          continue;
+        }
+        throw lastError;
+      }
+
+      if (!response.ok) {
+        const err = await response.json().catch(() => ({}));
+        throw new Error(`Gemini API error: ${err.error?.message || response.statusText}`);
+      }
+
+      const data = await response.json();
+      const candidate = data.candidates?.[0];
+      const parts     = candidate?.content?.parts || [];
+
+      const functionCalls = parts
+        .filter(p => p.functionCall)
+        .map(p => p.functionCall);
+
+      const textReply = parts
+        .filter(p => p.text)
+        .map(p => p.text)
+        .join('');
+
+      return { functionCalls, textReply };
+
+    } catch (err) {
+      lastError = err;
+      const isTimeout = err.name === 'TimeoutError' || err.name === 'AbortError' || err.message?.includes('timeout');
+      if (isTimeout && attempt < MAX_RETRIES) {
+        const delay = BASE_DELAY_MS * Math.pow(2, attempt);
+        console.warn(`Gemini API timeout — retrying in ${delay}ms (attempt ${attempt + 1}/${MAX_RETRIES + 1})`);
+        await new Promise(r => setTimeout(r, delay));
+        continue;
+      }
+      throw err;
+    }
   }
 
-  const data = await response.json();
-  const candidate = data.candidates?.[0];
-  const parts     = candidate?.content?.parts || [];
-
-  const functionCalls = parts
-    .filter(p => p.functionCall)
-    .map(p => p.functionCall);
-
-  const textReply = parts
-    .filter(p => p.text)
-    .map(p => p.text)
-    .join('');
-
-  return { functionCalls, textReply };
+  throw lastError;
 }
 
 // --- Ollama Backend ---

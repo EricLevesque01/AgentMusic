@@ -358,25 +358,31 @@ export class ProfileView {
     const variance = ratings.reduce((s, r) => s + (r - mean) ** 2, 0) / Math.max(ratings.length, 1);
     const stdDev = Math.sqrt(variance);
 
-    // Taste Tiers (Mapped to the 1-10 visual rating scale)
-    const peakElo = Math.max(maxElo, 1550);
-    const bottomElo = 1100;
-    
-    const getScore10 = (rating) => {
-      let score10;
-      if (rating >= 1500) {
-        score10 = 7.5 + ((rating - 1500) / (peakElo - 1500)) * 2.5;
-      } else {
-        score10 = 1.0 + ((rating - bottomElo) / (1500 - bottomElo)) * 6.5;
-      }
-      return Math.max(1.0, Math.min(10.0, score10));
+    // Taste Tiers (Forced Curve Distribution)
+    const total = rankedArtists.length;
+    const sBound = Math.max(1, Math.floor(total * 0.05));
+    const aBound = Math.max(sBound + 1, Math.floor(total * 0.20));
+    const bBound = Math.max(aBound + 1, Math.floor(total * 0.50));
+    const cBound = Math.max(bBound + 1, Math.floor(total * 0.80));
+
+    const sSlice = rankedArtists.slice(0, sBound);
+    const aSlice = rankedArtists.slice(sBound, aBound);
+    const bSlice = rankedArtists.slice(aBound, bBound);
+    const cSlice = rankedArtists.slice(bBound, cBound);
+    const fSlice = rankedArtists.slice(cBound); // Remaining bottom %
+
+    // Sample evenly across the slice to get truly representative artists for the UI row
+    const getRepresentative = (slice, count = 6) => {
+      if (slice.length <= count) return slice;
+      const step = slice.length / count;
+      return Array.from({ length: count }, (_, i) => slice[Math.floor(i * step)]);
     };
 
-    const sTier = rankedArtists.filter(a => getScore10(a.rating) >= 9.0);
-    const aTier = rankedArtists.filter(a => { const s = getScore10(a.rating); return s >= 8.0 && s < 9.0; });
-    const bTier = rankedArtists.filter(a => { const s = getScore10(a.rating); return s >= 6.0 && s < 8.0; });
-    const cTier = rankedArtists.filter(a => { const s = getScore10(a.rating); return s >= 4.0 && s < 6.0; });
-    const fTier = [...rankedArtists].reverse().filter(a => getScore10(a.rating) < 4.0);
+    const sTier = getRepresentative(sSlice);
+    const aTier = getRepresentative(aSlice);
+    const bTier = getRepresentative(bSlice);
+    const cTier = getRepresentative(cSlice);
+    const fTier = getRepresentative(fSlice);
 
     // Genre distribution from macro-genres
     const genreCounts = {};

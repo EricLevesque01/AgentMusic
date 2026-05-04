@@ -38,12 +38,12 @@ export async function callWithTools(systemPrompt, messages, toolDeclarations = [
   if (LLM_BACKEND === 'ollama') {
     return _callOllama(systemPrompt, messages, toolDeclarations, modelTier, agentName, formatSchema);
   }
-  return _callGemini(systemPrompt, messages, toolDeclarations, modelTier, useWebSearch);
+  return _callGemini(systemPrompt, messages, toolDeclarations, modelTier, useWebSearch, formatSchema);
 }
 
 // --- Gemini Backend ---
 
-async function _callGemini(systemPrompt, messages, toolDeclarations, modelTier, useWebSearch) {
+async function _callGemini(systemPrompt, messages, toolDeclarations, modelTier, useWebSearch, formatSchema = null) {
   const modelName = GEMINI_MODELS[modelTier] || GEMINI_MODELS.fast;
   const url = `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${GEMINI_API_KEY}`;
 
@@ -62,6 +62,10 @@ async function _callGemini(systemPrompt, messages, toolDeclarations, modelTier, 
     generationConfig: {
       temperature:     0.7,
       maxOutputTokens: modelTier === 'reasoning' ? 4096 : 2048,
+      ...(formatSchema && (!toolsObj || toolsObj.length === 0) ? { 
+        responseMimeType: "application/json", 
+        responseSchema: formatSchema 
+      } : {})
     },
   };
 
@@ -69,7 +73,7 @@ async function _callGemini(systemPrompt, messages, toolDeclarations, modelTier, 
     method:  'POST',
     headers: { 'Content-Type': 'application/json' },
     body:    JSON.stringify(body),
-    signal:  AbortSignal.timeout(30000), // 30s timeout — prevents pipeline hangs
+    signal:  AbortSignal.timeout(60000), // 60s timeout — prevents large JSON generation from timing out
   });
 
   if (!response.ok) {

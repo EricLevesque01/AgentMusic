@@ -55,7 +55,7 @@ export function createPlaylistCard(playlist, onClick) {
     <div class="playlist-card-content">
       ${isNew ? '<span class="playlist-card-badge">NEW</span>' : ''}
       <h3 class="playlist-card-title">${playlist.title || 'Curated Mix'}</h3>
-      <p class="playlist-card-reflection">${truncate(playlist.curatorReflection || playlist.intent || '', 100)}</p>
+      <p class="playlist-card-reflection">${truncate(isGenericReflection(playlist.curatorReflection) ? (playlist.intent || '') : (playlist.curatorReflection || playlist.intent || ''), 100)}</p>
       <div class="playlist-card-meta">
         <span>${playlist.trackCount || 0} tracks</span>
         <span>${date}</span>
@@ -91,6 +91,16 @@ export function createSkeletonCard(intent = '') {
   `;
 
   return card;
+}
+
+function isGenericReflection(text) {
+  if (!text) return true;
+  const generic = [
+    'curated automatically based on intent and taste profile',
+    'selected based on your taste profile',
+    'curated by the agent music pipeline',
+  ];
+  return generic.some(g => text.toLowerCase().includes(g));
 }
 
 function truncate(str, max) {

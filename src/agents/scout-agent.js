@@ -33,6 +33,22 @@ const LLM_BACKEND = import.meta.env?.VITE_LLM_BACKEND || 'gemini';
 
 export class ScoutAgent {
   /**
+   * Classify intent type synchronously (no LLM cost).
+   * Used to gate intentOverrideActive before and after the LLM retrieval plan.
+   * Returns: 'specific' | 'broad' | 'exploration' | 'general'
+   */
+  _classifyIntentType(intent) {
+    const text = (intent || '').toLowerCase();
+    // Specific artist/track request — user named something they want to hear
+    if (/check.?out|listen to|heard about|friend.*told|try\s+\w|got.?into|looking for|want to hear|play me|show me|find me|introduce me to\s+\w|give me some|just\s+\w|only\s+\w|\bcheck\b|\btry\b/.test(text)) return 'specific';
+    // Broad requests — use full graph traversal with seed artists
+    if (/familiar|favorites|my usual|top artists|what i know|same as always|my go-to|nothing new/.test(text)) return 'broad';
+    // Exploration — deep hop traversal requested
+    if (/explore|discover|new|underground|adventurous|\bintroduce me\b|haven.t heard|branch out|expand/.test(text)) return 'exploration';
+    return 'general';
+  }
+
+  /**
    * Main entry point. Build a candidate pool from the user's taste graph.
    * @param {object} tasteState - From ProfilerAgent
    * @param {string} sessionIntent - Natural language session vibe
@@ -44,6 +60,14 @@ export class ScoutAgent {
     resetResolverCaches();
 
     if (onThought) onThought("Scout: Assessing session constraints and building retrieval plan...");
+
+    // --- Fast intent classification (synchronous, no LLM cost) ---
+    // This gates intentOverrideActive BEFORE the LLM call, so even if the LLM
+    // returns an empty array for a specific request, we still suppress seed expansion.
+    const intentType = this._classifyIntentType(sessionIntent);
+    const isSpecificRequest = intentType === 'specific';
+    if (isSpecificRequest && onThought) onThought(`Scout: Detected specific artist/track request — seed expansion will be suppressed`);
+
     const hopDepth  = this.determineHopDepth(sessionIntent, context);
     if (onThought) onThought(`Scout: Graph traversal depth set to Hop-${hopDepth}`);
     if (isSpotifyDegraded() && onThought) onThought('Scout: ⚠ Spotify rate-limited — using Last.fm fallback for track data');
@@ -70,12 +94,13 @@ export class ScoutAgent {
     const seenTrackIds  = new Set();
 
     // --- Intent Override: Multi-Source Agentic Search ---
-    let intentOverrideActive = false;
+    // Gate: intentOverrideActive if EITHER the fast classifier detected a specific
+    // request OR the LLM retrieval plan produced a meaningful pool.
+    // This prevents the LLM's empty-array edge case from silently disabling the gate.
+    let intentOverrideActive = isSpecificRequest; // pre-set from synchronous classifier
     if (sessionIntent) {
-      await this._addIntentOverrideTracks(sessionIntent, tasteState, candidatePool, seenTrackIds, onThought);
-      // If the intent override produced a meaningful pool, it means the user asked
-      // for something specific (e.g. "check out Geese"). Don't dilute it with
-      // seed artist expansions — those will drown out the actual request.
+      await this._addIntentOverrideTracks(sessionIntent, tasteState, candidatePool, seenTrackIds, context, onThought);
+      // Also activate if the LLM produced a meaningful pool, even for 'general' intents
       if (candidatePool.length >= 5) {
         intentOverrideActive = true;
       }
@@ -117,6 +142,14 @@ export class ScoutAgent {
       }
     }
 
+    // --- Cultural Discoveries: inject CulturalScout's web-researched artists into the pool ---
+    // These run regardless of intentOverrideActive — cultural intelligence always enriches the pool.
+    const culturalIntel = context?.blackboard?.culturalIntelligence;
+    if (culturalIntel?.artistDiscoveries?.length > 0) {
+      if (onThought) onThought(`Scout: Adding ${culturalIntel.artistDiscoveries.length} cultural discovery leads to pool...`);
+      await this._addCulturalDiscoveries(culturalIntel.artistDiscoveries, eloRatings, candidatePool, seenTrackIds, onThought);
+    }
+
     // Enrich all candidates with Last.fm tags
     if (onThought) onThought("Scout: Enriching pool with Last.fm structural tags...");
     await this._enrichWithTags(candidatePool);
@@ -134,6 +167,24 @@ export class ScoutAgent {
       if (filtered.length >= 5) {
         candidatePool.length = 0;
         candidatePool.push(...filtered);
+      }
+    }
+
+    // Anti-repetition: throttle artists that appeared in recent playlists (7-day TTL)
+    // Source-tagged cultural discoveries and intent-override tracks are exempt — they're
+    // specifically requested or freshly researched.
+    const recentArtists = new Set(context?.recentPlaylistArtists || []);
+    if (recentArtists.size > 0) {
+      const exemptSources = new Set(['cultural_discovery', 'llm_primary_artist', 'llm_specific', 'intent_search']);
+      const filtered = candidatePool.filter(c => {
+        if (exemptSources.has(c.source)) return true;
+        return !recentArtists.has((c.artistName || '').toLowerCase());
+      });
+      // Only apply if we don't over-prune
+      if (filtered.length >= 8) {
+        candidatePool.length = 0;
+        candidatePool.push(...filtered);
+        if (onThought) onThought(`Scout: Anti-repetition removed recently-played artists, ${candidatePool.length} candidates remain`);
       }
     }
 
@@ -156,7 +207,8 @@ export class ScoutAgent {
         riskyBets: [...new Set(hop2Artists)].slice(0, 5),
         gaps: (context.coverageGaps || []).map(g => g.genre),
         sourceBreakdown,
-        usedAgenticRetrieval: (sourceBreakdown['llm_specific'] || 0) + (sourceBreakdown['intent_search'] || 0) > 0,
+        usedAgenticRetrieval: (sourceBreakdown['llm_specific'] || 0) + (sourceBreakdown['intent_search'] || 0) + (sourceBreakdown['llm_primary_artist'] || 0) > 0,
+        intentOverrideActive,
         spotifyDegraded: isSpotifyDegraded(),
       };
     }
@@ -190,8 +242,58 @@ export class ScoutAgent {
     return 1;
   }
 
+  // --- Private: Cultural Discoveries (from CulturalScout web research) ---
+  /**
+   * Resolve CulturalScout's artist discoveries into actual tracks.
+   * Each discovery is [{ name, reason, source, freshness }].
+   * We fetch top tracks from Spotify for each discovered artist and inject
+   * them into the pool marked as 'cultural_discovery'.
+   */
+  async _addCulturalDiscoveries(discoveries, eloRatings, pool, seen, onThought) {
+    const knownNames = new Set(
+      Object.values(eloRatings).map(a => (a.name || '').toLowerCase()).filter(Boolean)
+    );
+
+    // Only process artists the user doesn't already know well (not in their Elo graph)
+    const newDiscoveries = discoveries.filter(d =>
+      d.name && !knownNames.has(d.name.toLowerCase())
+    ).slice(0, 5); // Cap at 5 to avoid pool bloat
+
+    if (newDiscoveries.length === 0) return;
+
+    const { resolveTrack } = await import('../data/track-resolver.js');
+    const { getTopTracks } = await import('../data/spotify-api.js');
+
+    for (const discovery of newDiscoveries) {
+      try {
+        // Fetch 2-3 top tracks from this artist for a taste of their sound
+        const tracks = await getTopTracks(discovery.name, 3);
+        if (!tracks || tracks.length === 0) continue;
+
+        for (const track of tracks) {
+          if (seen.has(track.id)) continue;
+          seen.add(track.id);
+          pool.push({
+            track,
+            artistName: discovery.name,
+            score: 0.6, // Moderate initial score — Curator calibrates from here
+            source: 'cultural_discovery',
+            hopDistance: 1,
+            dominantFactor: discovery.reason || 'Trending in your musical world',
+            culturalFreshness: discovery.freshness || 'timely',
+            culturalSource: discovery.source || 'web',
+          });
+        }
+        if (onThought) onThought(`Scout: Added ${tracks.length} tracks from cultural discovery: ${discovery.name}`);
+      } catch (err) {
+        // Non-critical — skip this discovery if resolution fails
+        console.debug(`Scout: Cultural discovery failed for ${discovery.name}:`, err.message);
+      }
+    }
+  }
+
   // --- Private: Intent Override (LLM-Guided Multi-Source Retrieval) ---
-  async _addIntentOverrideTracks(sessionIntent, tasteState, pool, seen, onThought) {
+  async _addIntentOverrideTracks(sessionIntent, tasteState, pool, seen, context, onThought) {
     if (!sessionIntent || sessionIntent.trim() === '') return;
 
     if (onThought) onThought(`Scout: Analyzing semantic intent: "${sessionIntent}"`);
@@ -202,7 +304,8 @@ export class ScoutAgent {
     // Feed it the full taste context so it can be strategic, not generic.
     let tasteContext = '';
     try {
-      const tier1 = UserModel.loadTier1();
+      // Prefer context.tier1 (pre-loaded) to avoid a second DataStore call
+      const tier1 = context?.tier1 || UserModel.loadTier1();
       const dims = tier1?.tasteProfile?.musicDimensions;
       if (dims && dims._confidence > 0) {
         const sorted = Object.entries(dims)
@@ -222,7 +325,7 @@ You are the Scout — a music discovery agent. Given the session intent, decide:
 Session intent: "${sessionIntent}"
 User's top genres: ${topGenres.join(', ')}
 User's top artists: ${topArtistNames.join(', ')}${tasteContext}
-${(() => { const prefs = DataStore.getExplicitPreferences(); const mems = prefs.agent_memories || []; return mems.length > 0 ? `\nPERMANENT USER NOTES:\n${mems.map(m => '- ' + m).join('\n')}` : ''; })()}
+${(() => { const mems = context?.agentMemories || []; return mems.length > 0 ? `\nPERMANENT USER NOTES:\n${mems.map(m => '- ' + m).join('\n')}` : ''; })()}
 
 Think about what kind of request this is and adapt your retrieval strategy.
 You have THREE ways to find tracks — use whichever combination best serves the intent:
@@ -512,7 +615,33 @@ You MUST call the 'submit_retrieval_plan' tool.`;
         }
       }
     } catch (err) {
-      console.warn('Scout: Hop-1 Spotify recs failed:', err.message);
+      console.warn('Scout: Hop-1 Spotify recs failed, falling back to Last.fm artist resolution:', err.message);
+      // Fallback: resolve tracks from similar artists via Last.fm
+      // This ensures candidate diversity even without Spotify
+      const similarNames = [...similarArtistNames].slice(0, 8);
+      for (const artistName of similarNames) {
+        try {
+          const artist = await resolveArtist(artistName);
+          if (!artist) continue;
+          const tracks = await getTopTracks(artist.id, artist.name);
+          for (const track of tracks.slice(0, 3)) {
+            if (!seen.has(track.id)) {
+              seen.add(track.id);
+              pool.push({
+                track,
+                artistName: artist.name,
+                artistId: artist.id,
+                source: 'graph_hop',
+                hopDistance: 1,
+                eloScore: 1500,
+                tags: [],
+              });
+            }
+          }
+        } catch (innerErr) {
+          console.warn(`Scout: Hop-1 fallback failed for "${artistName}":`, innerErr.message);
+        }
+      }
     }
   }
 

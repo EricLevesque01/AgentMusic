@@ -92,8 +92,19 @@ export async function resolveArtist(name) {
   } catch (err) {
     if (err.message?.includes('429')) _markSpotifyDegraded();
     console.warn(`TrackResolver: Artist search failed for "${name}":`, err.message);
-    _artistCache.set(key, null);
-    return null;
+
+    // Ultimate fallback: build a minimal artist object so the pipeline
+    // can still function when Spotify is completely unavailable (e.g. tests, offline).
+    // The synthetic ID ensures tracks can be tracked through the pipeline.
+    const minimalArtist = {
+      id: `lastfm_${key.replace(/\s+/g, '_')}`,
+      name,
+      genres: [],
+      images: [],
+      _source: 'lastfm_fallback',
+    };
+    _artistCache.set(key, minimalArtist);
+    return minimalArtist;
   }
 }
 
@@ -154,7 +165,14 @@ export async function getTopTracks(artistId, artistName, limit = 10) {
   }
 
   // 4. Last.fm fallback: get track names → resolve via Spotify search
-  return _lastfmFallback(artistId, artistName, limit);
+  const fallbackTracks = await _lastfmFallback(artistId, artistName, limit);
+
+  // 5. Ultimate fallback: if even Last.fm→Spotify search failed, build
+  //    minimal tracks from Last.fm data alone (no Spotify resolution).
+  if (fallbackTracks.length === 0 && artistName) {
+    return _lastfmOnlyFallback(artistId, artistName, limit);
+  }
+  return fallbackTracks;
 }
 
 /**
@@ -223,6 +241,23 @@ function _buildMinimalTrack(lastfmTrack, artistId) {
     external_urls: {},
     _source: 'lastfm_fallback', // Flag so the UI can handle gracefully
   };
+}
+
+/**
+ * Pure Last.fm fallback: gets track names and builds minimal track objects
+ * WITHOUT any Spotify calls. Used when Spotify is completely unavailable.
+ */
+async function _lastfmOnlyFallback(artistId, artistName, limit) {
+  try {
+    const lastfmTracks = await getArtistTopTracksLastfm(artistName, limit);
+    if (!lastfmTracks || lastfmTracks.length === 0) return [];
+    const tracks = lastfmTracks.map(t => _buildMinimalTrack(t, artistId));
+    const cacheKey = `${artistId}_${limit}`;
+    _topTracksCache.set(cacheKey, tracks);
+    return tracks;
+  } catch {
+    return [];
+  }
 }
 
 // ════════════════════════════════════════════════════════════════

@@ -16,7 +16,9 @@ const SPOTIFY_AUTH_URL  = 'https://accounts.spotify.com/authorize';
 const SPOTIFY_TOKEN_URL = 'https://accounts.spotify.com/api/token';
 
 const CLIENT_ID    = import.meta.env?.VITE_SPOTIFY_CLIENT_ID;
-const REDIRECT_URI = 'http://127.0.0.1:5173/';  // Vite dev server
+const REDIRECT_URI = typeof window !== 'undefined'
+  ? `${window.location.protocol}//${window.location.host}/`
+  : 'http://127.0.0.1:5173/';
 
 // Scopes needed for TasteGraph
 const SCOPES = [

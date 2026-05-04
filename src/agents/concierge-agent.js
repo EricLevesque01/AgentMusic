@@ -16,6 +16,7 @@ import { callWithTools } from '../data/gemini-api.js';
 import { buildSoulPrefix } from './soul.js';
 import { UserModel } from './user-model.js';
 import { DataStore } from '../data/data-store.js';
+import { formatTasteBriefForPrompt } from './taste-brief.js';
 
 // --- Gemini Function Declarations ---
 const TOOL_DECLARATIONS = [
@@ -139,6 +140,28 @@ const TOOL_DECLARATIONS = [
       required: ['motivation'],
     },
   },
+  {
+    name: 'search_artist_info',
+    description: 'Search for current news, recent releases, critical reception, or tour dates about a specific artist. Use when the user asks about an artist\'s recent activity.',
+    parameters: {
+      type: 'object',
+      properties: {
+        artistName: { type: 'string', description: 'Name of the artist to research' },
+      },
+      required: ['artistName'],
+    },
+  },
+  {
+    name: 'find_events',
+    description: 'Find upcoming concerts, tours, or festivals relevant to the user\'s taste or a specific artist. Use when the user asks about live events.',
+    parameters: {
+      type: 'object',
+      properties: {
+        query: { type: 'string', description: 'Event search query, e.g. "Fontaines DC tour dates" or "indie festivals 2026"' },
+      },
+      required: ['query'],
+    },
+  },
 ];
 
 // Keyword fallback for when Gemini is unavailable
@@ -155,6 +178,97 @@ const KEYWORD_MAP = [
 export class ConciergeAgent {
   constructor() {
     this.chatHistory = []; // { role, parts: [{text}] }
+    // Sprint 4.4: Session summary — persists across history trims
+    // This captures the essence of early messages so context is never lost
+    // even when raw chat history is trimmed for token limits.
+    this.sessionSummary = '';
+  }
+
+  /**
+   * Sprint 4.1: Generate a proactive opening message.
+   * Called when the user opens the chat — the Concierge volunteers an observation
+   * instead of waiting for the user to speak.
+   * @param {PipelineContext} context - The pipeline context with taste data
+   * @returns {string} A warm, context-aware opening message
+   */
+  generateOpeningMessage(context) {
+    const insights = [];
+
+    // 1. Rising genre from drift trends
+    try {
+      const trends = UserModel.getDriftTrends();
+      const rising = (trends.genreMomentum || [])
+        .filter(g => (g.sessions >= 2) || (g.delta > 0.1))
+        .slice(0, 1);
+      if (rising.length > 0) {
+        insights.push({
+          priority: 3,
+          text: `You've been deep in ${rising[0].genre} lately — this playlist leans into that.`,
+        });
+      }
+    } catch (e) { /* no drift data yet */ }
+
+    // 2. Events relevant to their taste (from CulturalScout)
+    try {
+      const events = context?.currentEvents || [];
+      if (events.length > 0) {
+        const ev = events[0];
+        insights.push({
+          priority: 4, // Highest — timely and novel
+          text: `${ev.artist || 'One of your favorites'} has ${ev.type === 'tour' ? 'tour dates coming up' : ev.type === 'release' ? 'a new release' : 'something happening'}. ${ev.description || ''}`.trim(),
+        });
+      }
+    } catch (e) { /* no events */ }
+
+    // 3. Current playlist observation
+    try {
+      const playlist = context?.scoredPlaylist || [];
+      if (playlist.length > 0) {
+        const discoveryCount = playlist.filter(c => (c.hopDistance || 0) >= 1).length;
+        const discoveryPct = Math.round((discoveryCount / playlist.length) * 100);
+        if (discoveryPct > 40) {
+          insights.push({
+            priority: 2,
+            text: `This playlist is ${discoveryPct}% discoveries — there are some artists in here I think you'll love.`,
+          });
+        }
+      }
+    } catch (e) { /* no playlist yet */ }
+
+    // 4. Recent session skip rate warning
+    try {
+      const episodic = UserModel.getEpisodicMemory();
+      const recentSessions = (episodic.sessions || []).slice(0, 2);
+      const avgSkipRate = recentSessions.length > 0
+        ? recentSessions.reduce((s, sess) => s + (sess.stats?.skipRate || 0), 0) / recentSessions.length
+        : 0;
+      if (avgSkipRate > 35 && recentSessions.length >= 2) {
+        insights.push({
+          priority: 1,
+          text: `Your skip rate's been high recently — I went lighter on the discovery this time.`,
+        });
+      }
+    } catch (e) { /* no session data */ }
+
+    // 5. Cultural context from web research
+    try {
+      const intel = context?.blackboard?.culturalIntelligence;
+      if (intel?.criticalConsensus?.length > 0) {
+        const consensus = intel.criticalConsensus[0];
+        insights.push({
+          priority: 2,
+          text: `Critics have been talking about ${consensus.artist} — ${consensus.insight}`,
+        });
+      }
+    } catch (e) { /* no cultural intel */ }
+
+    // Pick the highest-priority insight
+    if (insights.length === 0) {
+      return null; // No proactive message — let the user start the conversation
+    }
+
+    insights.sort((a, b) => b.priority - a.priority);
+    return insights[0].text;
   }
 
   /**
@@ -167,8 +281,18 @@ export class ConciergeAgent {
     // Add user message to history
     this.chatHistory.push({ role: 'user', parts: [{ text: userMessage }] });
 
-    // Keep last 10 messages to stay within token limits
-    const recentHistory = this.chatHistory.slice(-10);
+    // Sprint 4.4: Build session summary from early messages for continuity
+    // The summary captures key context from messages that may be trimmed
+    if (this.chatHistory.length === 2) {
+      // After first exchange, seed the summary with the opening context
+      this.sessionSummary = `User opened with: "${userMessage}"`;
+    } else if (this.chatHistory.length > 2 && this.chatHistory.length % 4 === 0) {
+      // Every 4 messages, update the summary
+      this._updateSessionSummary(userMessage);
+    }
+
+    // Keep last 6 raw messages (Sprint 4.4: fewer raw messages, but with persistent summary)
+    const recentHistory = this.chatHistory.slice(-6);
 
     let functionCalls = [];
     let textReply     = '';
@@ -226,6 +350,7 @@ export class ConciergeAgent {
 
   clearHistory() {
     this.chatHistory = [];
+    this.sessionSummary = '';
   }
 
   /**
@@ -323,6 +448,37 @@ export class ConciergeAgent {
       if (hints) proactiveHints = hints;
     } catch (e) { /* No proactive hints available */ }
 
+    // --- Cultural intelligence (Sprint 2) ---
+    // Surface events and cultural context from the CulturalScout's research.
+    let culturalStr = '';
+    try {
+      const intel = context?.blackboard?.culturalIntelligence;
+      const events = context?.currentEvents || [];
+
+      if (intel?.culturalContext) {
+        culturalStr += `\nCURRENT MUSIC WORLD (from live research):\n${intel.culturalContext}`;
+      }
+
+      if (events.length > 0) {
+        const eventList = events.slice(0, 4)
+          .map(e => `- ${e.type?.toUpperCase()}: ${e.description}${e.date ? ' (' + e.date + ')' : ''}`)
+          .join('\n');
+        culturalStr += `\n\nUPCOMING EVENTS RELEVANT TO THIS USER:\n${eventList}\nYou can proactively mention these: "By the way, ${events[0]?.artist || 'one of your favorites'} has something coming up..."\n`;
+      }
+    } catch (e) { /* Cultural intel not yet available */ }
+
+    // --- Narrative anchors and memories from context (pre-loaded) ---
+    let memoriesStr = '';
+    try {
+      const anchors = (context?.narrativeAnchors || []).slice(0, 4).map(a => `- "${a.text}"`).join('\n');
+      const agentMems = (context?.agentMemories || []).slice(0, 6).map(m => `- ${m}`).join('\n');
+      if (anchors || agentMems) {
+        memoriesStr = '\nWHAT YOU KNOW ABOUT THIS USER (from past conversations):';
+        if (agentMems) memoriesStr += `\n${agentMems}`;
+        if (anchors) memoriesStr += `\nNarrative anchors:\n${anchors}`;
+      }
+    } catch (e) { /* memories not populated yet */ }
+
     return `${buildSoulPrefix()}
 
 You are acting as the Concierge — the conversational interface of TasteGraph.
@@ -347,13 +503,24 @@ TASTE TIERS:
 ${userModelContext}
 ${evolutionContext}
 ${proactiveHints}
+${culturalStr}
+${memoriesStr}
 
 ${trackCount > 0 ? `CURRENT PLAYLIST: ${trackCount} tracks loaded.` : 'No playlist currently loaded.'}
+
+${this.sessionSummary ? `CONVERSATION CONTEXT (what the user has told you so far):\n${this.sessionSummary}` : ''}
+
+${(() => {
+  // Sprint 3.1: Inject the centralized taste brief for richer context
+  const briefStr = formatTasteBriefForPrompt(context?.tasteBrief);
+  return briefStr ? `\n${briefStr}` : '';
+})()}
 
 Your job is to understand what the user wants and call the appropriate function(s).
 When the user describes WHAT THEY WANT MUSIC FOR (studying, working out, road trip, etc.), ALSO call classify_motivation to tag the session purpose.
 If a user asks about their taste, top artists, or vibe — use the leaderboard data above to answer directly. You know their music taste like a close friend.
 If a user asks for artist recommendations, use suggest_artists to inject them into the game pool.
+If a user asks about events or an artist's recent news, call search_artist_info or find_events.
 If you notice a taste evolution pattern that's relevant to the conversation, mention it naturally — you REMEMBER their past sessions.
 Always be brief, warm, and music-focused. Reply in 1-3 sentences max.`;
   }
@@ -462,6 +629,33 @@ Always be brief, warm, and music-focused. Reply in 1-3 sentences max.`;
       case 'taste_evolution':  return `Let me look at how your taste has been evolving...`;
       case 'adjust_preference':return `Done. I've noted your feedback on ${first.target}.`;
       default:                 return `Done!`;
+    }
+  }
+
+  /**
+   * Sprint 4.4: Update the session summary incrementally.
+   * Captures key context from recent messages without replacing the entire summary.
+   */
+  _updateSessionSummary(latestMessage) {
+    // Append key facts from recent messages to the summary
+    const keyPatterns = [
+      // Mood/activity context
+      { pattern: /(?:i(?:'m| am))\s+(studying|working|driving|cooking|relaxing|running|meditating)/i, extract: (m) => `User is ${m[1]}` },
+      // Genre preferences
+      { pattern: /(?:more|less|no)\s+(\w+\s?\w*)/i, extract: (m) => `Wants ${m[0]}` },
+      // Artist mentions
+      { pattern: /(?:love|hate|like|dislike|obsessed with|can't stand)\s+(.+?)(?:\.|,|$)/i, extract: (m) => `${m[0].trim()}` },
+    ];
+
+    for (const { pattern, extract } of keyPatterns) {
+      const match = latestMessage.match(pattern);
+      if (match) {
+        const fact = extract(match);
+        if (!this.sessionSummary.includes(fact)) {
+          this.sessionSummary += `\n- ${fact}`;
+        }
+        break;
+      }
     }
   }
 }

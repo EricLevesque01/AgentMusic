@@ -20,8 +20,9 @@ export class PipelineContext {
     // --- Curator output ---
     this.scoredPlaylist = [];
 
-    // --- Narrator output ---
+    // --- Curator explanations (title, summary, per-track reasons) ---
     this.explanations = {
+      playlistTitle: '',
       playlistSummary: '',
       trackExplanations: new Map(),
     };
@@ -37,6 +38,11 @@ export class PipelineContext {
     // --- Concierge Agent (injected via conversation) ---
     this.conciergeActions = [];
     this.chatHistory = [];
+
+    // --- Cultural Intelligence (Sprint 2: CulturalScout output) ---
+    // Populated before Scout runs. Consumed by Scout (artist pool), Curator (context),
+    // and Concierge (proactive insights about events + critical coverage).
+    this.currentEvents = [];          // [{ type, description, artist, date }]
 
     // --- Inter-Agent Context (Phase 2: Intelligent Orchestration) ---
 
@@ -60,8 +66,13 @@ export class PipelineContext {
       driftSummary: '',         // from detectDriftPatterns()
     };
 
-    // Curator reflection — set by Curator, read by Narrator
+    // Curator reflection — set by Curator during rankAndSelect()
     this.curatorReflection = '';
+
+    // --- Taste DNA Brief (Sprint 3.1) ---
+    // Centralized taste snapshot built by Orchestrator after Profiler finishes.
+    // Consumed by Curator (formatTasteBriefForPrompt) and Narrator (enrichment context).
+    this.tasteBrief = null;
 
     // --- Blackboard: Structured inter-agent handoff notes (Phase 5) ---
     this.blackboard = {
@@ -82,17 +93,17 @@ export class PipelineContext {
       },
       curator: {
         selectionThesis: '',      // the Curator's reflection on its choices
+        playlistTitle: '',        // creative title (moved from narrator)
+        playlistSummary: '',      // one-liner playlist summary
         discoveryRatio: 0,        // fraction of tracks from hop-1/2
         tradeoffs: '',            // what was sacrificed and why
-      },
-      narrator: {
-        playlistTitle: '',        // the creative title
-        sophisticationLevel: '',  // what explanation depth was used
       },
       concierge: {
         tasteEvolution: '',       // cross-session taste evolution narrative
         proactiveInsights: [],    // hints the Concierge can volunteer
       },
+      culturalIntelligence: null, // Set by CulturalScout before Scout runs
+      //   { artistDiscoveries, culturalContext, criticalConsensus, recentReleases, freshness }
     };
   }
 
@@ -122,8 +133,10 @@ export class PipelineContext {
         if (!this.tasteState) throw new Error('PipelineContext: tasteState is required for curator stage');
         if (!this.candidatePool.length) throw new Error('PipelineContext: candidatePool is required for curator stage');
         return true;
+      // Narrator stage removed — Curator writes explanations directly.
+      // Kept for backwards compat: validates scoredPlaylist exists.
       case 'narrator':
-        if (!this.scoredPlaylist || this.scoredPlaylist.length === 0) throw new Error('PipelineContext: non-empty scoredPlaylist is required for narrator stage');
+        if (!this.scoredPlaylist || this.scoredPlaylist.length === 0) throw new Error('PipelineContext: non-empty scoredPlaylist is required');
         return true;
       default:
         return true;

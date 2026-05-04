@@ -7,146 +7,12 @@
  * Acts:      Produces per-track explanations and a playlist summary
  */
 
-import { getArtistMetadata, getArtistGenres } from '../data/musicbrainz-api.js';
+
 import { callWithTools } from '../data/gemini-api.js';
+import { buildSoulPrefix } from './soul.js';
+import { formatTasteBriefForPrompt } from './taste-brief.js';
 
 export class NarratorAgent {
-  /**
-   * Generate explanations for the full playlist using Gemini + MusicBrainz context.
-   * @param {Array}  scoredPlaylist
-   * @param {object} tasteState
-   * @param {string} sessionIntent
-   * @param {object} context - PipelineContext for inter-agent communication
-   * @returns {Promise<{ playlistSummary, trackExplanations: Map }>}
-   */
-  async generate(scoredPlaylist, tasteState, sessionIntent, context = null, onThought = null) {
-    if (!scoredPlaylist || scoredPlaylist.length === 0) {
-      return {
-        playlistSummary: 'No tracks to explain.',
-        trackExplanations: new Map(),
-      };
-    }
-
-    if (onThought) onThought("Narrator: Synthesizing track connections...");
-
-    // 1. Enrich the top 5 unique artists with MusicBrainz structural data
-    // (We limit to 5 to respect the 1 req/sec limit and avoid long loading times)
-    const uniqueArtists = [...new Set(scoredPlaylist.map(t => t.artistName))].slice(0, 5);
-    const mbDataStr = [];
-    
-    for (const name of uniqueArtists) {
-      if (onThought) onThought(`Narrator: Pulling structural context for ${name}...`);
-      const meta = await getArtistMetadata(name);
-      if (meta && meta.mbid) {
-        const genres = await getArtistGenres(meta.mbid);
-        const origin = meta.country ? `from ${meta.country}` : '';
-        const era    = meta.beginYear ? `started ~${meta.beginYear}` : '';
-        const tags   = genres.length ? `Tags: ${genres.slice(0, 3).join(', ')}` : '';
-        mbDataStr.push(`- ${name}: ${origin} ${era}. ${tags}`);
-      }
-    }
-
-    // 2. Build track list context for the LLM
-    const trackContext = scoredPlaylist.map(c => 
-      `- [ID: ${c.track.id}] "${c.track.name}" by ${c.artistName} (Source: ${c.source}, Reason: ${c.dominantFactor})`
-    ).join('\n');
-
-    // 3. Inter-agent context for richer narration
-    const anchoredArtist = context?.tasteProfile?.anchoredTopArtist;
-    const underExplored = context?.tasteProfile?.underExploredGenres || [];
-    const skippedGenres = context?.sessionSignals?.skippedGenres || [];
-
-    // 4. Build the prompt
-    const systemPrompt = `You are the Narrator for TasteGraph, a sophisticated music engine.
-Your job is to explain the generated playlist to the user.
-Current user taste (Calibrated via Active Learning): 
-- Top Genres: ${(tasteState.topGenres || []).slice(0, 3).join(', ')}
-- Top Artists: ${(tasteState.topRankedArtists || []).slice(0, 5).map(a=>a.name).join(', ')}
-- Acoustic Vibe: ${((tasteState.audioProfile?.avgEnergy || 0.5)*100).toFixed(0)}% Energy
-${anchoredArtist ? `- North Star: ${anchoredArtist} is the user's confirmed #1. Reference their sound when explaining why tracks fit.` : ''}
-
-Session intent: "${sessionIntent}"
-${skippedGenres.length > 0 ? `Note: The user skipped ${skippedGenres.join(', ')} tracks earlier. If you kept one anyway, explain why it's different.` : ''}
-${underExplored.length > 0 ? `Note: Tracks in ${underExplored.join(', ')} are there to expand the user's taste map into areas they haven't explored much yet. Frame these as discoveries.` : ''}
-
-Playlist Tracks:
-${trackContext}
-
-MusicBrainz Structural Data (for deep context):
-${mbDataStr.join('\n') || 'None available.'}
-
-Analyze the tracks and the MusicBrainz data. Call the 'submit_explanations' tool with:
-1. A creative, catchy 2-5 word 'playlistTitle'.
-2. A concise 1-sentence 'playlistSummary' describing the overall vibe and origins of the music.
-3. An array of 'trackExplanations', where each object has the trackId and a 1-sentence explanation of why it fits. If a track's source is a 'trending_signal' (like Reddit), YOU MUST explicitly mention that it is currently trending in cultural spaces alongside fitting their taste.`;
-
-    const toolDeclarations = [{
-      name: 'submit_explanations',
-      description: 'Submit the final explanations for the playlist.',
-      parameters: {
-        type: 'object',
-        properties: {
-          playlistTitle: { type: 'string' },
-          playlistSummary: { type: 'string' },
-          trackExplanations: {
-            type: 'array',
-            items: {
-              type: 'object',
-              properties: {
-                trackId: { type: 'string' },
-                explanation: { type: 'string' }
-              },
-              required: ['trackId', 'explanation']
-            }
-          }
-        },
-        required: ['playlistTitle', 'playlistSummary', 'trackExplanations']
-      }
-    }];
-
-    try {
-      const result = await callWithTools(
-        systemPrompt,
-        [{ role: 'user', parts: [{ text: 'Generate the playlist narrative.' }] }],
-        toolDeclarations,
-        'fast',
-        false,
-        'narrator'
-      );
-      const submitCall = result.functionCalls.find(fc => fc.name === 'submit_explanations');
-      
-      if (submitCall && submitCall.args) {
-        const trackMap = new Map();
-        for (const item of submitCall.args.trackExplanations || []) {
-          trackMap.set(item.trackId, item.explanation);
-        }
-        // Prefer the Curator's playlist name (it has the most context) over the Narrator's
-        const curatorName = context?.playlistName;
-        return {
-          playlistTitle: curatorName || submitCall.args.playlistTitle || 'Curated Playlist',
-          playlistSummary: submitCall.args.playlistSummary || 'A custom mix based on your taste graph.',
-          trackExplanations: trackMap
-        };
-      }
-    } catch (err) {
-      console.warn("NarratorAgent: Gemini failed, returning basic explanations.", err);
-    }
-
-    // Fallback if LLM fails — use Curator's reason if it's a real one, else a clean generic
-    const fallbackMap = new Map();
-    const CURATOR_DEFAULT = 'Selected based on your taste profile.';
-    for (const c of scoredPlaylist) {
-      const reason = (c.dominantFactor && c.dominantFactor !== CURATOR_DEFAULT)
-        ? c.dominantFactor
-        : `${c.artistName} fits the ${sessionIntent || 'session'} vibe — discovered via ${c.source || 'your taste graph'}.`;
-      fallbackMap.set(c.track.id, reason);
-    }
-    return {
-      playlistTitle: context?.playlistName || 'Curated Mix',
-      playlistSummary: `A custom mix of ${scoredPlaylist.length} tracks based on your taste graph.`,
-      trackExplanations: fallbackMap,
-    };
-  }
 
   /**
    * Generates a multi-faceted Agentic Profile Analysis for the Profile tab.
@@ -169,7 +35,6 @@ Analyze the tracks and the MusicBrainz data. Call the 'submit_explanations' tool
     const wikiText = wikiContexts.filter(Boolean).join('\n\n');
 
     const prompt = `You are the user's highly opinionated, incredibly knowledgeable best friend who happens to be a music historian and cultural critic. You know their music taste better than they know themselves.
-Your tone should be warm, conversational, and direct—like you're sitting on a couch listening to records together. Speak to them as a close friend ("You know I've always noticed you gravitate toward...", "It's so classic you to...").
 
 USER DOSSIER (Calibrated via the Taste Arena):
 - Core Obsessions (S-Tier Favorites): ${(tasteState.tasteTiers?.coreIdentity || []).join(', ') || 'None'}
@@ -183,20 +48,23 @@ CULTURAL/HISTORICAL CONTEXT (Wikipedia RAG):
 ${wikiText || 'No biographical context available.'}
 
 YOUR TASK:
-Write a beautifully crafted, highly personalized, 3-4 paragraph "Musical Vibe" breakdown analyzing your friend's taste.
+Return a JSON object analyzing your friend's taste with exactly these three keys:
+1. "tagline": A punchy, 3-5 word capitalized tagline for their music taste (e.g. "Indie Sleaze Devotee").
+2. "heroDescription": A 1-2 sentence snappy summary of their top artist and overall vibe.
+3. "vibeAnalysis": 1 highly concise paragraph (max 4 sentences) analyzing their taste based on the dossier.
 
-CRITICAL RULES:
+CRITICAL RULES for vibeAnalysis:
 1. TONE: Warm, friendly, slightly teasing but deeply appreciative. You are their friend. Speak directly to them using "you". 
-2. SYNTHESIZE THE CULTURE: Use the Wikipedia RAG context to identify exactly *what* era, scene, or production style ties their favorite artists together. Say something of real substance about why these sounds connect on a human level.
-3. USE THE DISLIKES: If they have 'Actively Dismissed' artists, playfully roast them for what they reject (e.g., "I know you can't stand the over-produced sheen of...").
-4. BE BOLD & SPECIFIC: Use a highly specific, metaphorical example. For instance, "Your taste feels like you're trying to recreate the exact feeling of walking home in the rain in 2005 listening to [Artist A], but with the bass of [Artist B]."
-5. LENGTH & STRUCTURE: Write 3 to 4 substantial paragraphs. Make it feel like a meaningful, deep-dive text message or conversation. Do not use generic fluff like "You have a diverse mix of sounds."
-6. Do not use markdown, just write the plain text paragraphs.`;
+2. SYNTHESIZE THE CULTURE: Use the Wikipedia RAG context to identify exactly *what* ties their favorite artists together.
+3. BE BOLD & SPECIFIC: Use a highly specific, metaphorical example. For instance, "Your taste feels like you're trying to recreate the exact feeling of walking home in the rain in 2005 listening to [Artist A]."
+4. LENGTH: Must be 1 paragraph, absolutely no more. Get straight to the point. Make it concise and punchy.
+
+Output ONLY raw JSON. Do not use markdown backticks.`;
 
     try {
       const result = await callWithTools(
         prompt,
-        [{ role: 'user', parts: [{ text: 'Analyze my taste identity.' }] }],
+        [{ role: 'user', parts: [{ text: 'Return JSON profile analysis.' }] }],
         [],
         'reasoning',
         false,
@@ -204,12 +72,83 @@ CRITICAL RULES:
       );
 
       if (result.textReply) {
-        return result.textReply.trim();
+        // Strip markdown backticks if the model ignores the instruction
+        const cleanJson = result.textReply.replace(/^```json\n?/, '').replace(/\n?```$/, '').trim();
+        return JSON.parse(cleanJson);
       }
       throw new Error("Empty text reply from LLM");
     } catch (err) {
       console.warn("NarratorAgent: Agentic Profile LLM failed.", err);
       throw new Error("Failed to generate agentic profile: " + err.message);
+    }
+  }
+
+  /**
+   * Sprint 3.3: Enrich discovery tracks with deep music-history context.
+   * Runs as background enrichment after the Curator finishes.
+   * For each discovery track, generates a 2-3 sentence explanation that
+   * connects the artist's cultural lineage to the user's known taste.
+   *
+   * @param {Array} discoveryTracks - Tracks with hopDistance >= 1 or web/cultural sources
+   * @param {PipelineContext} context - Full pipeline context for taste brief
+   * @returns {Object} Map of trackId -> enriched explanation string
+   */
+  async enrichDiscoveryTracks(discoveryTracks, context) {
+    if (!discoveryTracks || discoveryTracks.length === 0) return {};
+
+    const tasteBriefStr = formatTasteBriefForPrompt(context?.tasteBrief);
+    const coreArtists = context?.tasteState?.tasteTiers?.coreIdentity?.join(', ') || 'unknown';
+
+    // Build a compact list of tracks to enrich
+    const tracksForPrompt = discoveryTracks.map(c => ({
+      id: c.track.id,
+      name: c.track.name,
+      artist: c.artistName,
+      source: c.source || 'unknown',
+      curatorReason: c.dominantFactor || '',
+    }));
+
+    const systemPrompt = `${buildSoulPrefix()}
+
+You are the Narrator — a music historian enriching discovery tracks with cultural context.
+The user has never heard these artists. Your job: explain WHY they should care, using
+music history, cultural lineage, and specific connections to their known favorites.
+
+${tasteBriefStr || `User's core artists: ${coreArtists}`}
+
+For each track below, write a 2-3 sentence enrichment that:
+1. Places the artist in a scene/era/movement (e.g., "emerged from the 2010s Brooklyn DIY scene")
+2. Draws a SPECIFIC sonic bridge to one of the user's core artists (shared producer, influence chain, genre lineage)
+3. Names what makes THIS track a good entry point ("the lead single that...", "a deep cut with...")
+
+Tone: Warm, knowledgeable insider — like a friend who knows music history deeply.
+Do NOT use generic phrases like "fits your vibe" or "you might enjoy".
+
+Return a JSON object: { "trackId": "enriched explanation string", ... }
+Return ONLY the JSON object.`;
+
+    try {
+      const result = await callWithTools(
+        systemPrompt,
+        [{ role: 'user', parts: [{ text: `Enrich these discovery tracks:\n${JSON.stringify(tracksForPrompt, null, 2)}` }] }],
+        [],
+        'fast',
+        false,
+        'narrator'
+      );
+
+      if (result.textReply) {
+        const cleaned = result.textReply.replace(/^```json\n?/, '').replace(/\n?```$/, '').trim();
+        const start = cleaned.indexOf('{');
+        const end = cleaned.lastIndexOf('}');
+        if (start !== -1 && end > start) {
+          return JSON.parse(cleaned.substring(start, end + 1));
+        }
+      }
+      return {};
+    } catch (err) {
+      console.warn('NarratorAgent: Discovery enrichment failed:', err.message);
+      return {};
     }
   }
 }

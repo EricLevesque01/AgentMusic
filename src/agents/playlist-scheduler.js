@@ -28,11 +28,11 @@
 import { DataStore } from '../data/data-store.js';
 import { UserModel } from './user-model.js';
 
-const MAX_UNLISTENED = 3;
-const MAX_PER_RUN = 4;
+const MAX_UNLISTENED = 5;         // Keep up to 5 queued playlists
+const MAX_PER_RUN = 3;            // Generate up to 3 per run
 const GENERATION_GAP_MS = 5000;
-const MIN_RUN_INTERVAL_MS = 15 * 60 * 1000;   // 15 minutes between runs
-const CRON_INTERVAL_MS    = 15 * 60 * 1000;    // Check every 15 minutes
+const MIN_RUN_INTERVAL_MS = 5 * 60 * 1000;    // 5 minutes between runs (was 15)
+const CRON_INTERVAL_MS    = 15 * 60 * 1000;   // Check every 15 minutes
 const STALE_UNLISTENED_MS = 7 * 24 * 60 * 60 * 1000;  // 7 days
 const STALE_LISTENED_MS   = 3 * 24 * 60 * 60 * 1000;  // 3 days
 
@@ -232,7 +232,7 @@ export class PlaylistScheduler {
         }
       }
 
-      // Seed 4: Time-contextual — with artist-specific anchoring
+      // Seed 4: Time-contextual — always generate regardless of UserModel state
       const hour = new Date().getHours();
       const timeAnchor = topNames.length > 0 ? topNames[Math.floor(Math.random() * topNames.length)] : null;
       if (hour >= 6 && hour < 10) {
@@ -258,7 +258,7 @@ export class PlaylistScheduler {
         }
       }
 
-      // Seed 6: Top artist deep-dive — with era and scene context
+      // Seed 6: Top artist deep-dive — always generate if we have any rated artists
       if (topArtists.length > 0) {
         const pick = topArtists[Math.floor(Math.random() * Math.min(3, topArtists.length))];
         const genres = (pick.genres || []).slice(0, 2).join(' and ');
@@ -289,13 +289,18 @@ export class PlaylistScheduler {
       [seeds[i], seeds[j]] = [seeds[j], seeds[i]];
     }
 
-    // Fallback if no signals available yet
-    if (seeds.length === 0) {
-      seeds.push(
+    // Pad with fallbacks if we couldn't generate enough organic seeds
+    if (seeds.length < 3) {
+      const fallbacks = [
         { intent: 'Critically acclaimed albums from the past year that deserve more attention — the ones the algorithm missed', category: 'fallback' },
         { intent: 'Hidden gems and B-sides — underappreciated tracks from artists who never got their due', category: 'fallback' },
         { intent: 'Genre-spanning connections — the invisible threads that link jazz to electronic to folk to everything in between', category: 'fallback' },
-      );
+      ];
+      for (const f of fallbacks) {
+        if (!seeds.some(s => s.intent === f.intent)) {
+          seeds.push(f);
+        }
+      }
     }
 
     return seeds;

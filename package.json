@@ -8,6 +8,8 @@
     "build": "vite build",
     "preview": "vite preview",
     "test": "vitest run",
+    "test:unit": "vitest run tests/unit/ tests/calibration.test.js tests/elo.test.js tests/elo-extended.test.js tests/user-model.test.js tests/pipeline-context.test.js tests/pipeline-context-extended.test.js tests/taste-game.test.js tests/taste-game-flow.test.js tests/settled-artist.test.js tests/drift-detection.test.js tests/music-dimensions.test.js tests/context-sharing.test.js",
+    "test:judge": "cross-env RUN_JUDGE=1 vitest run tests/judge/ --reporter=verbose",
     "test:watch": "vitest"
   },
   "devDependencies": {

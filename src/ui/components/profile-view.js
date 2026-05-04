@@ -1,9 +1,14 @@
 import { DataStore } from '../../data/data-store.js';
-import { getArtistMetadata } from '../../data/musicbrainz-api.js';
 import { ProfilerAgent } from '../../agents/profiler-agent.js';
 import { NarratorAgent } from '../../agents/narrator-agent.js';
 import { mapToMacroGenres } from '../../data/genre-taxonomy.js';
 import { getCurrentUser } from '../../data/spotify-api.js';
+
+// Module-level cache so profile re-renders are instant
+let _cachedTasteState = null;
+let _tasteStateTimestamp = 0;
+const TASTE_STATE_TTL = 5 * 60 * 1000; // 5 min
+let _backfillDone = false;
 
 export class ProfileView {
   constructor(container) {
@@ -83,8 +88,16 @@ export class ProfileView {
   }
 
   async _renderProfile() {
-    const profiler = new ProfilerAgent();
-    const tasteState = await profiler.buildTasteState();
+    // Use cached tasteState if fresh (< 5 min) — avoids re-fetching Spotify on every nav
+    let tasteState;
+    if (_cachedTasteState && Date.now() - _tasteStateTimestamp < TASTE_STATE_TTL) {
+      tasteState = _cachedTasteState;
+    } else {
+      const profiler = new ProfilerAgent();
+      tasteState = await profiler.buildTasteState();
+      _cachedTasteState = tasteState;
+      _tasteStateTimestamp = Date.now();
+    }
 
     const eloRatings = DataStore.getEloRatings();
     const rankedArtists = Object.entries(eloRatings)
@@ -93,12 +106,72 @@ export class ProfileView {
       .sort((a, b) => b.rating - a.rating);
 
     if (rankedArtists.length === 0) {
+      // Bootstrap: show Spotify top artists so the profile isn't empty on first visit
+      const spotifyArtists = tasteState?.artists?.slice(0, 12) || [];
+
+      if (spotifyArtists.length === 0) {
+        this.container.innerHTML = `
+          <div class="glass-card" style="padding: var(--space-8); text-align: center;">
+            <p style="color: var(--text-secondary);">Your taste profile will appear here after you play the Taste Game.</p>
+            <button class="btn btn-primary btn-lg mt-4" onclick="location.hash='#/game'">Play Taste Game</button>
+          </div>
+        `;
+        return;
+      }
+
+      // Show a bootstrap profile from Spotify data
+      const topGenres = (tasteState.topGenres || []).slice(0, 5);
+      this.container.style.transition = 'opacity 150ms ease';
+      this.container.style.opacity = '0';
       this.container.innerHTML = `
-        <div class="glass-card" style="padding: var(--space-8); text-align: center;">
-          <p style="color: var(--text-secondary);">Your taste profile will appear here after you play the Taste Game.</p>
-          <button class="btn btn-primary btn-lg mt-4" onclick="location.hash='#/game'">Play Taste Game</button>
+        <div style="display: flex; flex-direction: column; gap: var(--space-6); opacity: 0; animation: fadeInUp 400ms ease forwards;">
+
+          <div style="background: linear-gradient(135deg, rgba(61, 139, 255, 0.12), rgba(99, 102, 241, 0.08)); border: 1px solid rgba(61, 139, 255, 0.25); border-radius: var(--radius-xl); padding: var(--space-6);">
+            <h2 style="font-size: 1.5rem; font-weight: var(--font-weight-bold); margin-bottom: var(--space-3); background: var(--gradient-primary); -webkit-background-clip: text; -webkit-text-fill-color: transparent;">
+              Welcome to Agent Music
+            </h2>
+            <p style="color: var(--text-secondary); line-height: 1.6; margin-bottom: var(--space-4);">
+              We pulled your top artists from Spotify. Play the <strong>Taste Game</strong> to calibrate your rankings — the more you compare, the smarter your agent-curated playlists become.
+            </p>
+            <button class="btn btn-primary" onclick="location.hash='#/game'" style="margin-right: var(--space-3);">Start Comparing</button>
+            <button class="btn btn-secondary" onclick="location.hash='#/playlist'">Generate a Playlist</button>
+          </div>
+
+          <div class="glass-card" style="padding: var(--space-5);">
+            <h3 style="font-size: var(--font-size-base); margin-bottom: var(--space-4); display: flex; align-items: center; gap: var(--space-2);">
+              <span style="display: flex; color: var(--accent-primary); font-size: 20px;">🎧</span> Your Spotify Top Artists
+            </h3>
+            <div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: var(--space-3);">
+              ${spotifyArtists.map(a => {
+                const img = a.images?.[0]?.url;
+                const genres = (a.genres || []).slice(0, 2).join(', ');
+                return `
+                  <div style="text-align: center; padding: var(--space-3);">
+                    ${img
+                      ? `<img src="${img}" style="width: 80px; height: 80px; border-radius: 50%; object-fit: cover; border: 2px solid var(--border-glass); margin-bottom: var(--space-2);">`
+                      : `<div style="width: 80px; height: 80px; border-radius: 50%; background: var(--bg-tertiary); display: flex; align-items: center; justify-content: center; margin: 0 auto var(--space-2); font-size: 28px; color: var(--text-muted);">🎵</div>`
+                    }
+                    <div style="font-weight: var(--font-weight-medium); font-size: var(--font-size-sm); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">${a.name}</div>
+                    ${genres ? `<div style="font-size: var(--font-size-xs); color: var(--text-muted); margin-top: 2px;">${genres}</div>` : ''}
+                  </div>
+                `;
+              }).join('')}
+            </div>
+          </div>
+
+          ${topGenres.length > 0 ? `
+          <div class="glass-card" style="padding: var(--space-5);">
+            <h3 style="font-size: var(--font-size-base); margin-bottom: var(--space-3); display: flex; align-items: center; gap: var(--space-2);">
+              <span style="display: flex; color: var(--accent-primary); font-size: 20px;">🎸</span> Your Top Genres
+            </h3>
+            <div style="display: flex; flex-wrap: wrap; gap: var(--space-2);">
+              ${topGenres.map(g => `<span class="badge badge-blue" style="text-transform: capitalize;">${g}</span>`).join('')}
+            </div>
+          </div>
+          ` : ''}
         </div>
       `;
+      requestAnimationFrame(() => { this.container.style.opacity = '1'; });
       return;
     }
 
@@ -108,10 +181,13 @@ export class ProfileView {
     // Start rendering the static profile UI immediately
     const prefs = DataStore.getExplicitPreferences();
 
-    // Smooth crossfade: fade out skeleton → swap → fade in real content
-    this.container.style.transition = 'opacity 200ms ease';
+    // Instant swap — no artificial delay
+    this.container.style.transition = 'opacity 150ms ease';
     this.container.style.opacity = '0';
-    await new Promise(r => setTimeout(r, 200));
+
+    // Use rAF to ensure the opacity:0 frame paints before we swap content,
+    // then restore to 1 so the fadeInUp animation on the inner div is visible.
+    await new Promise(r => requestAnimationFrame(r));
 
     this.container.innerHTML = `
       <div style="display: flex; flex-direction: column; gap: var(--space-6); opacity: 0; animation: fadeInUp 400ms ease forwards;">
@@ -132,8 +208,8 @@ export class ProfileView {
 
             <!-- Taste DNA Info -->
             <div style="flex: 1; z-index: 1;">
-              <div style="font-size: 2rem; font-weight: var(--font-weight-bold); line-height: 1.2; margin-bottom: var(--space-3); background: var(--gradient-primary); -webkit-background-clip: text; -webkit-text-fill-color: transparent;">${stats.tasteSignature}</div>
-              <p style="font-size: 1.1rem; color: var(--text-primary); line-height: 1.5; margin-bottom: var(--space-2);">You're practically running the fan club for <strong>${stats.topArtistName}</strong>. Your vibe is a heavy dose of ${stats.topGenre}, but you're not afraid to mix it up with some ${stats.secondGenre} when the mood strikes.</p>
+              <div id="hero-tagline" style="font-size: 2rem; font-weight: var(--font-weight-bold); line-height: 1.2; margin-bottom: var(--space-3); background: var(--gradient-primary); -webkit-background-clip: text; -webkit-text-fill-color: transparent;">${stats.tasteSignature}</div>
+              <p id="hero-desc" style="font-size: 1.1rem; color: var(--text-primary); line-height: 1.5; margin-bottom: var(--space-2);">You're practically running the fan club for <strong>${stats.topArtistName}</strong>. Your vibe is a heavy dose of ${stats.topGenre}, but you're not afraid to mix it up with some ${stats.secondGenre} when the mood strikes.</p>
             </div>
           </div>
         </div>
@@ -198,49 +274,63 @@ export class ProfileView {
       this._drawRadarChart(stats.genreDistribution);
     });
 
-    // Musical Vibe: Cache-first strategy
-    // Show cached version instantly, regenerate in background only if stale
+    // Musical Vibe & Hero Description: Cache-first strategy
     const currentHash = rankedArtists.slice(0, 5).map(a => a.name).join(',');
     const cached = DataStore.load('agentic_profile_cache');
     const el = document.getElementById('agentic-profile-text');
+    const heroTagline = document.getElementById('hero-tagline');
+    const heroDesc = document.getElementById('hero-desc');
 
-    if (cached && cached.html && el) {
-      // Show cached version immediately (no spinner!)
-      el.innerHTML = cached.html;
-      el.style.opacity = '1';
+    const applyProfile = (profile) => {
+      // profile is a JSON object with { tagline, heroDescription, vibeAnalysis }
+      // fallback to raw string if the agent returned old format
+      if (typeof profile === 'string') {
+        if (el) el.innerHTML = profile;
+      } else if (profile && typeof profile === 'object') {
+        if (el && profile.vibeAnalysis) el.innerHTML = profile.vibeAnalysis;
+        if (heroTagline && profile.tagline) heroTagline.innerHTML = profile.tagline;
+        if (heroDesc && profile.heroDescription) heroDesc.innerHTML = profile.heroDescription;
+      }
+    };
+
+    if (cached && cached.profile && el) {
+      applyProfile(cached.profile);
+      if (el) el.style.opacity = '1';
 
       // Check if stale (> 30 min or artist lineup changed)
       const isStale = Date.now() - (cached.generatedAt || 0) > 30 * 60 * 1000;
       const artistsChanged = cached.artistHash !== currentHash;
 
       if (isStale || artistsChanged) {
-        // Silently refresh in background — no spinner, no flash
         const narrator = new NarratorAgent();
         narrator.generateAgenticProfile(tasteState).then(profile => {
-          if (profile && el) {
-            el.style.transition = 'opacity 300ms ease';
-            el.style.opacity = '0.7';
-            setTimeout(() => {
-              el.innerHTML = profile;
-              el.style.opacity = '1';
-            }, 300);
+          if (profile) {
+            if (el) {
+              el.style.transition = 'opacity 300ms ease';
+              el.style.opacity = '0.7';
+              setTimeout(() => {
+                applyProfile(profile);
+                el.style.opacity = '1';
+              }, 300);
+            } else {
+              applyProfile(profile);
+            }
             DataStore.save('agentic_profile_cache', {
-              html: profile, generatedAt: Date.now(), artistHash: currentHash,
+              profile, generatedAt: Date.now(), artistHash: currentHash,
             });
           }
         }).catch(() => { /* keep showing cached version */ });
       }
-    } else if (el) {
+    } else {
       // No cache at all — generate fresh (first-time user or cleared data)
       const narrator = new NarratorAgent();
       narrator.generateAgenticProfile(tasteState).then(profile => {
-        if (el) {
-          el.style.transition = 'opacity 400ms ease';
-          el.innerHTML = profile;
-          el.style.opacity = '1';
-        }
+        if (el) el.style.transition = 'opacity 400ms ease';
+        applyProfile(profile);
+        if (el) el.style.opacity = '1';
+        
         DataStore.save('agentic_profile_cache', {
-          html: profile, generatedAt: Date.now(), artistHash: currentHash,
+          profile, generatedAt: Date.now(), artistHash: currentHash,
         });
       }).catch(err => {
         console.warn('Failed to generate agentic profile:', err);
@@ -248,8 +338,12 @@ export class ProfileView {
       });
     }
 
-    // Background task: Backfill missing genres via Last.fm for cached Elo ratings
-    this._backfillMissingGenres(rankedArtists).catch(() => {});
+    // Background task: Backfill missing genres via Last.fm (skip if already done this session)
+    if (!_backfillDone) {
+      this._backfillMissingGenres(rankedArtists)
+        .then(() => { _backfillDone = true; })
+        .catch(() => {});
+    }
   }
 
   // --- Compute all analytics from raw Elo data ---

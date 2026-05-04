@@ -1,5 +1,4 @@
 import { AgentStatus } from '../components/agent-status.js';
-import { Orchestrator } from '../../agents/orchestrator.js';
 import { PlaylistView } from '../components/playlist-view.js';
 import { DataStore } from '../../data/data-store.js';
 
@@ -40,15 +39,24 @@ export function renderPlaylistPage(container) {
 
   const statusPanel = new AgentStatus(document.getElementById('status-container'));
 
-  const orchestrator = window.TG?.orchestrator || new Orchestrator((stage, isDone) => {
-    statusPanel.update(stage, isDone);
-  }, (thought) => {
-    statusPanel.addThought(thought);
-  });
+  // Always reuse the global Orchestrator singleton
+  // (set by main.js after Spotify auth completes)
+  let orchestrator = window.TG?.orchestrator;
 
-  if (window.TG?.orchestrator) {
-    window.TG.orchestrator.statusCallback = (stage, isDone) => statusPanel.update(stage, isDone);
-    window.TG.orchestrator.thoughtCallback = (thought) => statusPanel.addThought(thought);
+  // Live-bind: if the page was mounted before TG was ready, pick it up on first generate
+  function getOrchestrator() {
+    if (!orchestrator) orchestrator = window.TG?.orchestrator;
+    if (orchestrator) {
+      orchestrator.statusCallback = (stage, isDone) => statusPanel.update(stage, isDone);
+      orchestrator.thoughtCallback = (thought) => statusPanel.addThought(thought);
+    }
+    return orchestrator;
+  }
+
+  // Wire callbacks now if already available
+  if (orchestrator) {
+    orchestrator.statusCallback = (stage, isDone) => statusPanel.update(stage, isDone);
+    orchestrator.thoughtCallback = (thought) => statusPanel.addThought(thought);
   }
 
   const resultsEl    = document.getElementById('playlist-results');
@@ -85,13 +93,19 @@ export function renderPlaylistPage(container) {
               ${trackCount} tracks • Generated ${date}
             </div>
           </div>
-          <div style="display:flex; gap:var(--space-2);">
+          <div style="display:flex;gap:var(--space-2);">
             <button class="btn btn-primary btn-sm view-btn" data-id="${p.id}">View</button>
-            <button class="btn btn-secondary btn-sm export-btn" data-id="${p.id}">
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" style="margin-right:4px;">
-                <path d="M12 0C5.4 0 0 5.4 0 12s5.4 12 12 12 12-5.4 12-12S18.66 0 12 0zm5.521 17.34c-.24.359-.66.48-1.021.24-2.82-1.74-6.36-2.101-10.561-1.141-.418.122-.779-.179-.899-.539-.12-.421.18-.78.54-.9 4.56-1.021 8.52-.6 11.64 1.32.42.18.479.659.301 1.02zm1.44-3.3c-.301.42-.841.6-1.262.3-3.239-1.98-8.159-2.58-11.939-1.38-.479.12-1.02-.12-1.14-.6-.12-.48.12-1.021.6-1.141C9.6 9.9 15 10.561 18.72 12.84c.361.181.54.78.241 1.2zm.12-3.36C15.24 8.4 8.82 8.16 5.16 9.301c-.6.179-1.2-.181-1.38-.721-.18-.601.18-1.2.72-1.381 4.26-1.26 11.28-1.02 15.721 1.621.539.3.719 1.02.419 1.56-.299.421-1.02.599-1.559.3z"/>
-              </svg>Export
-            </button>
+            ${p.context.savedToSpotify ? `
+              <button class="btn btn-ghost btn-sm" disabled style="color:var(--text-primary);">
+                ✅ Saved
+              </button>
+            ` : `
+              <button class="btn btn-ghost btn-sm export-btn" data-id="${p.id}">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" style="margin-right:4px;">
+                  <path d="M12 0C5.4 0 0 5.4 0 12s5.4 12 12 12 12-5.4 12-12S18.66 0 12 0zm5.521 17.34c-.24.359-.66.48-1.021.24-2.82-1.74-6.36-2.101-10.561-1.141-.418.122-.779-.179-.899-.539-.12-.421.18-.78.54-.9 4.56-1.021 8.52-.6 11.64 1.32.42.18.479.659.301 1.02zm1.44-3.3c-.301.42-.841.6-1.262.3-3.239-1.98-8.159-2.58-11.939-1.38-.479.12-1.02-.12-1.14-.6-.12-.48.12-1.021.6-1.141C9.6 9.9 15 10.561 18.72 12.84c.361.181.54.78.241 1.2zm.12-3.36C15.24 8.4 8.82 8.16 5.16 9.301c-.6.179-1.2-.181-1.38-.721-.18-.601.18-1.2.72-1.381 4.26-1.26 11.28-1.02 15.721 1.621.539.3.719 1.02.419 1.56-.299.421-1.02.599-1.559.3z"/>
+                </svg>Export
+              </button>
+            `}
             <button class="btn btn-ghost btn-icon btn-sm delete-btn" data-id="${p.id}" aria-label="Delete">🗑️</button>
           </div>
         </div>
@@ -152,16 +166,15 @@ export function renderPlaylistPage(container) {
           const pl = await createPlaylist(user.id, `TasteGraph: ${new Date().toLocaleDateString()}`, p.context.playlistSummary || 'TasteGraph Curated Mix');
           await addTracksToPlaylist(pl.id, uris);
           
-          e.currentTarget.innerHTML = '✅ Saved!';
+          DataStore.markPlaylistSavedToSpotify(id);
+          e.currentTarget.innerHTML = '✅ Saved';
+          e.currentTarget.classList.remove('export-btn');
+          e.currentTarget.style.color = 'var(--text-primary)';
         } catch (err) {
           console.error(err);
           e.currentTarget.innerHTML = '❌ Failed';
-        }
-        
-        setTimeout(() => {
-          e.currentTarget.innerHTML = originalText;
           e.currentTarget.disabled = false;
-        }, 2000);
+        }
       });
     });
   }
@@ -185,8 +198,22 @@ export function renderPlaylistPage(container) {
     btn.innerHTML = `<span class="pipeline-dot active" style="display:inline-block;width:16px;height:16px;margin-right:8px;"></span> Working...`;
     resultsEl.innerHTML = '';
 
+    const orch = getOrchestrator();
+    if (!orch) {
+      resultsEl.innerHTML = `
+        <div class="glass-card" style="padding: var(--space-6); text-align: center; border-color: var(--accent-pink);">
+          <div style="font-size: 2rem; margin-bottom: var(--space-3);">⚠️</div>
+          <p style="color: var(--text-primary); font-weight: var(--font-weight-medium);">Pipeline not ready</p>
+          <p style="color: var(--text-muted); font-size: var(--font-size-sm); margin-top: var(--space-2);">Connect Spotify first, then try again.</p>
+        </div>
+      `;
+      btn.disabled = false;
+      btn.innerHTML = 'Generate Playlist';
+      return;
+    }
+
     try {
-      const context = await orchestrator.generatePlaylist('user_local', vibe);
+      const context = await orch.generatePlaylist('user_local', vibe);
       window.TG.lastContext = context;
       
       // Save it to library (populates both playlist_library and legacy saved_playlists)

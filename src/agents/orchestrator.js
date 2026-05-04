@@ -1,26 +1,39 @@
 /**
  * TasteGraph — Orchestrator
- * Coordinates the full pipeline: Profiler → Scout → Curator → Narrator
- * Also handles partial re-runs triggered by Session DJ and Concierge.
+ * Coordinates the full pipeline: Profiler → Scout → Curator
+ * The Curator now produces all playlist metadata (reasons, summary, title)
+ * directly, eliminating the redundant Narrator stage.
+ * The NarratorAgent is kept only for generateAgenticProfile() (Musical Vibe).
+ * PIPELINE STAGE ORDER:
+ * Pre-pipeline: _buildInitialContext() — single DataStore/UserModel read
+ * Stage 1: Profiler        — taste dimensions, Elo rankings, coverage gaps
+ * Stage 1.5: CulturalScout — web research, events, cultural context (non-blocking)
+ * Stage 2: Scout           — candidate pool assembly (reads cultural intel)
+ * Stage 3: Curator         — playlist selection (reads cultural context)
+ * Stage 4: Narrator        — background enrichment (non-blocking, optional)
+ * Post-pipeline: ReflectionAgent — updates long-term UserModel Tier1
  */
 import { PipelineContext } from './pipeline-context.js';
 import { ProfilerAgent } from './profiler-agent.js';
+import { CulturalScout } from './cultural-scout.js';
 import { ScoutAgent } from './scout-agent.js';
 import { CuratorAgent } from './curator-agent.js';
 import { NarratorAgent } from './narrator-agent.js';
 import { ReflectionAgent } from './reflection-agent.js';
 import { UserModel } from './user-model.js';
 import { DataStore } from '../data/data-store.js';
+import { buildTasteBrief } from './taste-brief.js';
 
 export class Orchestrator {
   constructor(statusCallback = null, thoughtCallback = null) {
     this.statusCallback = statusCallback;
     this.thoughtCallback = thoughtCallback; // New callback for granular thoughts
-    this.profiler    = new ProfilerAgent();
-    this.scout       = new ScoutAgent();
-    this.curator     = new CuratorAgent();
-    this.narrator    = new NarratorAgent();
-    this.reflection  = new ReflectionAgent();
+    this.profiler       = new ProfilerAgent();
+    this.culturalScout  = new CulturalScout();
+    this.scout          = new ScoutAgent();
+    this.curator        = new CuratorAgent();
+    this.narrator       = new NarratorAgent();
+    this.reflection     = new ReflectionAgent();
     this._lastContext = null;
   }
 
@@ -40,6 +53,10 @@ export class Orchestrator {
    */
   async generatePlaylist(userId, sessionIntent) {
     const context = PipelineContext.create(userId, sessionIntent);
+
+    // --- Pre-pipeline: Load ALL shared state once (single source of truth) ---
+    // Agents read from context.* — never call DataStore/UserModel directly during a run.
+    this._buildInitialContext(context);
 
     // --- Stage 1: Profiler ---
     this._reportStatus('profiler');
@@ -85,18 +102,44 @@ export class Orchestrator {
       console.warn('Orchestrator: Drift detection failed:', e.message);
     }
 
-    // Build the shared UserModel (Tier 1) from profiler output
+    // Build the shared UserModel (Tier 1) from profiler output, then refresh context
+    // so the profiler's computed values (musicDimensions, etc.) are available downstream.
     try {
       UserModel.buildFromProfiler(context.tasteState);
       UserModel.initSession(sessionIntent);
+      // Refresh tier1 in context now that profiler has updated it
+      context.tier1 = UserModel.loadTier1();
     } catch (e) {
       console.warn('Orchestrator: UserModel build failed, continuing without:', e.message);
     }
 
-    // Read session signals from DataStore (written by Session DJ)
+    // Session signals were pre-loaded in _buildInitialContext() but re-read here
+    // to pick up any signals written by the Session DJ during this session.
     context.sessionSignals = DataStore.getSessionSignals();
 
-    // --- Stage 2: Scout — reads coverageGaps + sessionSignals ---
+    // --- Sprint 3.1: Build the centralized Taste DNA Brief ---
+    // One structured snapshot consumed by Curator, Concierge, and Narrator.
+    try {
+      context.tasteBrief = buildTasteBrief(context);
+    } catch (e) {
+      console.warn('Orchestrator: TasteBrief failed, continuing without:', e.message);
+      context.tasteBrief = null;
+    }
+
+    // --- Stage 1.5: CulturalScout — non-blocking web intelligence ---
+    // Runs AFTER profiler (needs taste data) and BEFORE Scout (feeds discoveries into pool).
+    // If it fails, pipeline continues with empty culturalIntelligence (graceful degradation).
+    this._reportStatus('cultural');
+    try {
+      await this.culturalScout.research(context, this._reportThought.bind(this));
+    } catch (culturalErr) {
+      console.warn('Orchestrator: CulturalScout failed (non-blocking):', culturalErr.message);
+      // Ensure fields exist even on failure
+      context.blackboard.culturalIntelligence = context.blackboard.culturalIntelligence || null;
+      context.currentEvents = context.currentEvents || [];
+    }
+
+    // --- Stage 2: Scout — reads coverageGaps + sessionSignals + culturalIntelligence ---
     this._reportStatus('scout');
     context.validateForStage('scout');
     context.candidatePool = await this.scout.findCandidates(
@@ -126,33 +169,83 @@ export class Orchestrator {
         : 0;
     }
 
-    // --- Stage 4: Narrator — reads context for personalized copy ---
+    // --- Sprint 3.4: Persist recentPlaylistArtists for anti-repetition ---
+    // Write every artist in this playlist to the rolling 7-day window.
+    try {
+      const existingRecent = DataStore.load('recent_playlist_artists') || [];
+      const now = Date.now();
+      const newEntries = [...new Set(
+        (context.scoredPlaylist || []).map(c => (c.artistName || '').toLowerCase()).filter(Boolean)
+      )].map(artist => ({ artist, date: now }));
+      // Merge and deduplicate (keep latest date per artist)
+      const mergedMap = new Map();
+      for (const entry of [...existingRecent, ...newEntries]) {
+        const existing = mergedMap.get(entry.artist);
+        if (!existing || entry.date > existing.date) {
+          mergedMap.set(entry.artist, entry);
+        }
+      }
+      // Prune entries older than 7 days
+      const cutoff = now - 7 * 24 * 60 * 60 * 1000;
+      const pruned = [...mergedMap.values()].filter(e => e.date > cutoff);
+      DataStore.save('recent_playlist_artists', pruned);
+    } catch (e) {
+      console.warn('Orchestrator: Anti-repetition persistence failed:', e.message);
+    }
+
+    // --- Stage 4: Build explanations directly from Curator output ---
+    // The Curator already produces per-track reasons, playlistName, playlistSummary,
+    // and curatorReflection — no need for a separate Narrator LLM call.
     this._reportStatus('narrator');
 
-    // Guard: If curator produced an empty playlist, skip narration gracefully
     if (!context.scoredPlaylist || context.scoredPlaylist.length === 0) {
-      this._reportThought('Narrator: No tracks to narrate — curator returned an empty playlist.');
+      this._reportThought('Pipeline: No tracks to explain — curator returned an empty playlist.');
       context.explanations = {
         playlistTitle: 'No Results',
         playlistSummary: 'The curator could not find tracks matching your request. Try broadening your description.',
         trackExplanations: new Map(),
       };
     } else {
-      context.explanations = await this.narrator.generate(
-        context.scoredPlaylist,
-        context.tasteState,
-        context.sessionIntent,
-        context,
-        this._reportThought.bind(this)
-      );
+      // Build explanations from Curator's per-track reasons
+      const trackMap = new Map();
+      for (const c of context.scoredPlaylist) {
+        trackMap.set(c.track.id, c.dominantFactor || `Selected for the "${context.sessionIntent}" session.`);
+      }
+      context.explanations = {
+        playlistTitle: context.playlistName || 'Curated Playlist',
+        playlistSummary: context.scoredPlaylist.playlistSummary
+          || context.curatorReflection
+          || `A custom mix of ${context.scoredPlaylist.length} tracks based on your taste graph.`,
+        trackExplanations: trackMap,
+      };
     }
 
     this._reportStatus('narrator', true); // Done
     this._lastContext = context;
 
-    // Pre-warm the agentic profile in background (fire-and-forget)
-    // Add a 2s delay to prevent rate limiting (429s) right after the Narrator finishes
+    // --- Stage 4.5: Narrator Background Enrichment (Sprint 3.3) ---
+    // Enriches the 3-5 most interesting discovery tracks with deep music-history context.
+    // Runs as fire-and-forget — doesn't block the UI.
     setTimeout(() => {
+      // 1. Background enrichment for discovery tracks
+      const discoveryTracks = (context.scoredPlaylist || [])
+        .filter(c => (c.hopDistance || 0) >= 1 || ['web_discovery', 'graph_hop', 'cultural_discovery'].includes(c.source))
+        .slice(0, 5);
+
+      if (discoveryTracks.length > 0) {
+        this.narrator.enrichDiscoveryTracks(discoveryTracks, context).then(enriched => {
+          if (enriched && context.explanations?.trackExplanations) {
+            for (const [trackId, enrichedReason] of Object.entries(enriched)) {
+              context.explanations.trackExplanations.set(trackId, enrichedReason);
+            }
+            this._reportThought(`Narrator: Enriched ${Object.keys(enriched).length} discovery tracks with music-history context`);
+          }
+        }).catch(err => {
+          console.warn('Orchestrator: Narrator enrichment failed (non-blocking):', err.message);
+        });
+      }
+
+      // 2. Pre-warm the agentic profile (existing behavior)
       this.narrator.generateAgenticProfile(context.tasteState).then(profile => {
         if (profile) {
           try {
@@ -194,13 +287,17 @@ export class Orchestrator {
     );
     this._lastContext.curatorReflection = this._lastContext.scoredPlaylist.curatorReflection;
 
+    // Build explanations from Curator output (no Narrator call)
     this._reportStatus('narrator');
-    this._lastContext.explanations = await this.narrator.generate(
-      this._lastContext.scoredPlaylist,
-      this._lastContext.tasteState,
-      this._lastContext.sessionIntent,
-      this._lastContext
-    );
+    const trackMap = new Map();
+    for (const c of this._lastContext.scoredPlaylist) {
+      trackMap.set(c.track.id, c.dominantFactor || 'Re-ranked based on updated preferences.');
+    }
+    this._lastContext.explanations = {
+      playlistTitle: this._lastContext.scoredPlaylist.playlistName || this._lastContext.explanations?.playlistTitle || 'Curated Mix',
+      playlistSummary: this._lastContext.scoredPlaylist.playlistSummary || this._lastContext.curatorReflection || '',
+      trackExplanations: trackMap,
+    };
 
     this._reportStatus('narrator', true);
     return this._lastContext;
@@ -330,6 +427,35 @@ export class Orchestrator {
    * Populate the inter-agent tasteProfile on the context object.
    * Runs after the Profiler, before Scout/Curator/Narrator.
    */
+  /**
+   * Pre-load all shared context before the pipeline begins.
+   * This is the SINGLE place that reads DataStore and UserModel.
+   * Every agent then reads from context.* during the run.
+   */
+  _buildInitialContext(context) {
+    try { context.tier1 = UserModel.loadTier1(); } catch (e) { context.tier1 = null; }
+    try { context.tier2 = UserModel.getEpisodicMemory(); } catch (e) { context.tier2 = { sessions: [] }; }
+    try { context.driftTrends = UserModel.getDriftTrends(); } catch (e) { context.driftTrends = {}; }
+    try {
+      context.explicitPreferences = DataStore.getExplicitPreferences();
+      context.agentMemories = context.explicitPreferences.agent_memories || [];
+    } catch (e) { context.explicitPreferences = {}; context.agentMemories = []; }
+    try {
+      context.narrativeAnchors = context.tier1?.narrativeAnchors || [];
+    } catch (e) { context.narrativeAnchors = []; }
+    // sessionSignals are written by SessionDJ — load them here for consistency
+    // (they will be re-read post-profiler to catch any live session updates)
+    try { context.sessionSignals = DataStore.getSessionSignals(); } catch (e) { context.sessionSignals = {}; }
+    // Track artists recently recommended to power the anti-repetition engine
+    try {
+      const raw = DataStore.load('recent_playlist_artists') || [];
+      const cutoff = Date.now() - 7 * 24 * 60 * 60 * 1000; // 7-day TTL
+      context.recentPlaylistArtists = raw
+        .filter(r => r.date > cutoff)
+        .map(r => r.artist.toLowerCase());
+    } catch (e) { context.recentPlaylistArtists = []; }
+  }
+
   _populateTasteProfile(context) {
     const eloRatings = context.tasteState?.eloRatings || {};
     const allRanked = Object.entries(eloRatings)

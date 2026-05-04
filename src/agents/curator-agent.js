@@ -7,11 +7,11 @@
  * Acts:      Produces a ScoredPlaylist with adaptive length and quality verification
  */
 import { callWithTools } from '../data/gemini-api.js';
-import { getArtistMetadata } from '../data/musicbrainz-api.js';
-import { getSimilarArtists } from '../data/lastfm-api.js';
+
 import { buildSoulPrefix } from './soul.js';
 import { UserModel } from './user-model.js';
 import { DataStore } from '../data/data-store.js';
+import { formatTasteBriefForPrompt } from './taste-brief.js';
 
 /**
  * JSON Schema for the Curator's response.
@@ -33,20 +33,24 @@ const CURATOR_RESPONSE_SCHEMA = {
       type: 'string',
       description: 'Evocative, specific playlist name (not generic)',
     },
+    playlistSummary: {
+      type: 'string',
+      description: 'One compelling sentence describing the playlist\'s vibe and emotional arc',
+    },
     playlist: {
       type: 'array',
       items: {
         type: 'object',
         properties: {
           id:     { type: 'string', description: 'Spotify track ID' },
-          reason: { type: 'string', description: 'One sentence: why this track fits the playlist' },
+          reason: { type: 'string', description: '1-2 sentences: why this track fits — reference specific user context, anchored artists, or stated preferences' },
         },
         required: ['id', 'reason'],
       },
       description: 'Ordered list of selected tracks',
     },
   },
-  required: ['reflection', 'playlistName', 'playlist'],
+  required: ['reflection', 'playlistName', 'playlistSummary', 'playlist'],
 };
 
 export class CuratorAgent {
@@ -97,12 +101,50 @@ export class CuratorAgent {
     // Default / general
     return {
       intentType: 'general',
-      targetTracks: '10-20 — choose whatever length feels right for the intent',
+      targetTracks: '15-20 — choose whatever length feels right for the intent',
       maxPerArtist: '2',
       maxPerArtistNum: 2,
       diversityNote: 'Balance familiarity with discovery. Mix known favorites with new finds.',
       eraNote: 'No specific era constraints. Let the intent guide temporal choices.',
     };
+  }
+
+  /**
+   * Hard pre-filter: remove AI-generated / spam / ambient content farm tracks
+   * from the candidate pool BEFORE the LLM sees them.
+   * These patterns match artist names used by content farms on streaming platforms.
+   */
+  _filterAISpam(pool) {
+    const AI_SPAM_PATTERNS = [
+      // Descriptive ensemble names (content farms)
+      /\b(relaxing|chill|lo.?fi|study|sleep|focus|meditation|ambient|spa|yoga|nature|rain|white\s*noise|binaural|solfeggio|healing|calming|peaceful|sleep|dreamy)\s+(music|sounds?|beats?|vibes?|jazz|piano|guitar|ensemble|collective|studio|records?|project|mix|playlist)/i,
+      // Generic instrument + genre combos
+      /^(smooth jazz|chill hop|lofi|lo-fi|deep house|chillout|chillwave)\s+(collective|studio|music|beats|ensemble)/i,
+      // Content farm suffixes
+      /\b(study beats|bedroom pop collective|ambient sounds|nature sounds|sleep music|rain sounds|white noise|piano covers|acoustic covers|workout music|gym music|focus music)/i,
+      // Year/number spam channels
+      /^(top\s+\d+|best\s+\d+|\d{4}\s+hits)/i,
+      // Generic "Playlist" or "Beats" in name
+      /\b(playlist|beats?|instrumentals?|vibes?\s+only)\b/i,
+      // DJ-prefixed spam accounts (not real DJ artists)
+      /^dj\s+\w+\s+(beats|instrumentals|music|sounds)/i,
+    ];
+
+    const before = pool.length;
+    const filtered = pool.filter(c => {
+      const artist = (c.artistName || '').trim();
+      const trackName = (c.track?.name || '').trim();
+      // Check artist name against spam patterns
+      if (AI_SPAM_PATTERNS.some(p => p.test(artist))) return false;
+      // Also reject if track name itself looks like spam
+      if (/\b(hz|hertz|binaural|solfeggio|isochronic|subliminal)\b/i.test(trackName)) return false;
+      return true;
+    });
+
+    if (filtered.length < before) {
+      console.info(`CuratorAgent: AI/spam pre-filter removed ${before - filtered.length} tracks (${before} → ${filtered.length})`);
+    }
+    return filtered;
   }
 
   /**
@@ -150,14 +192,20 @@ export class CuratorAgent {
       return [];
     }
 
+    // --- Hard pre-filter: remove AI/spam content BEFORE the LLM sees the pool ---
+    const cleanPool = this._filterAISpam(candidatePool);
+    if (onThought && cleanPool.length < candidatePool.length) {
+      onThought(`Curator: Filtered ${candidatePool.length - cleanPool.length} AI/spam tracks from pool`);
+    }
+
     if (onThought) onThought("Evaluating tracks against session intent...");
 
     const topGenres = (tasteState.topGenres || []).slice(0, 5).join(', ');
     const topArtistsArray = (tasteState.topRankedArtists || tasteState.artists || []).slice(0, 5);
     const topArtists = topArtistsArray.map(a => a.name).join(', ');
 
-    // Prepare a condensed pool for the LLM to review
-    const poolForPrompt = candidatePool.slice(0, 60).map(c => ({
+    // Prepare a condensed pool for the LLM to review (use clean pool)
+    const poolForPrompt = cleanPool.slice(0, 80).map(c => ({
       id: c.track.id,
       name: c.track.name,
       artist: c.artistName,
@@ -171,8 +219,7 @@ export class CuratorAgent {
       userModelContext = UserModel.buildCuratorContext();
     } catch (e) { /* UserModel not yet populated — that's ok for first run */ }
 
-    const prefs = DataStore.getExplicitPreferences();
-    const memories = prefs.agent_memories || [];
+    const memories = context?.agentMemories || [];
     const memoriesStr = memories.length > 0
       ? `\nPERMANENT USER NOTES (from past conversations):\n${memories.map(m => `- ${m}`).join('\n')}` : '';
 
@@ -185,8 +232,9 @@ export class CuratorAgent {
       if (signals.skippedArtists?.length) signalsStr += `\n- Skipped artists: ${signals.skippedArtists.join(', ')}`;
     }
 
-    // --- Scout's handoff note (blackboard) ---
+    // --- Scout's handoff note (blackboard) — placed at TOP of prompt for LLM anchoring ---
     let scoutHandoff = '';
+    let intentOverrideConstraint = '';
     if (context?.blackboard?.scout) {
       const s = context.blackboard.scout;
       const parts = [`\nSCOUT'S HANDOFF (how this pool was assembled):`];
@@ -196,7 +244,10 @@ export class CuratorAgent {
         parts.push(`- Source breakdown: ${sources}`);
       }
       if (s.usedAgenticRetrieval) {
-        parts.push(`- ⚡ LLM-CHOSEN TRACKS IN POOL: The Scout hand-picked specific tracks for this intent. Tracks with source "llm_specific" or "intent_search" were chosen by the LLM to serve the session intent — PRIORITIZE THESE over generic top-tracks.`);
+        parts.push(`- ⚡ EXPLICIT USER REQUEST IN POOL: Tracks with source "llm_primary_artist", "llm_specific", or "intent_search" are the EXACT targets of the session intent. You MUST include these tracks. Prioritize them above all algorithmically-chosen candidates.`);
+      }
+      if (s.intentOverrideActive) {
+        intentOverrideConstraint = `\n⚠ CRITICAL CONSTRAINT: The user made a SPECIFIC REQUEST. Honor it unconditionally.\n- Do NOT replace the requested artist/tracks with familiar S-Tier artists.\n- Familiar favorites belong in a SUPPORTING role only — max 30% of the playlist.\n- If you see tracks from the requested artist in the pool, they MUST appear.\n- Filling the playlist with existing favorites when they asked for something new is a failure.\n`;
       }
       if (s.highConfidence?.length) parts.push(`- High-confidence (from user taste): ${s.highConfidence.join(', ')}`);
       if (s.riskyBets?.length) parts.push(`- Risky bets (exploration): ${s.riskyBets.join(', ')}`);
@@ -205,18 +256,33 @@ export class CuratorAgent {
       scoutHandoff = parts.join('\n');
     }
 
-    const systemPrompt = `${buildSoulPrefix()}
+    // --- Sprint 3.1: Centralized Taste DNA Brief ---
+    const tasteBriefStr = formatTasteBriefForPrompt(context?.tasteBrief);
 
+    const systemPrompt = `${buildSoulPrefix()}
+${intentOverrideConstraint}
+${scoutHandoff}
+
+${(() => {
+  const intel = context?.blackboard?.culturalIntelligence;
+  if (!intel?.culturalContext) return '';
+  const releaseNotes = (intel.recentReleases || [])
+    .slice(0, 3)
+    .map(r => `- ${r.artist}: "${r.title}" (${r.type}${r.approximate_date ? ', ' + r.approximate_date : ''})`)
+    .join('\n');
+  return `CURRENT MUSIC WORLD CONTEXT (from live web research):
+${intel.culturalContext}${releaseNotes ? '\n\nRecent Releases:\n' + releaseNotes : ''}
+Freshness: ${intel.freshness || 'unknown'}. Use this cultural context to make your per-track reasons feel timely and specific.\n`;
+})()}
 You are acting as the Curator — the playlist assembler. Assemble a cohesive, high-quality playlist from the Candidate Pool that authentically serves the Session Intent.
 
-USER TASTE PROFILE:
+${tasteBriefStr || `USER TASTE PROFILE:
 - Top Artists: ${topArtists}
-- Top Genres: ${topGenres}
+- Top Genres: ${topGenres}`}
 
 ${userModelContext}
 ${memoriesStr}
 ${signalsStr}
-${scoutHandoff}
 
 SESSION INTENT: "${sessionIntent || 'General vibe'}"
 
@@ -232,30 +298,45 @@ QUALITY GATES — ENFORCE STRICTLY:
 3. ARTIST DIVERSITY: ${params.diversityNote}
 4. ERA AWARENESS: ${params.eraNote}
 
+CURATION METHOD — TWO-STEP SELECTION THESIS:
+Step 1 — THESIS: Before selecting ANY tracks, state in your "reflection" field:
+  a) What is the emotional/sonic arc of this playlist? (e.g., "opens introspective, builds to cathartic, closes with warmth")
+  b) What discovery ratio am I targeting and why? (e.g., "40% discovery because the user's skip rate is low and trajectory is expanding")
+  c) What will I deliberately EXCLUDE from the pool and why? (e.g., "dropping all ambient tracks because the intent is energetic")
+Step 2 — SELECTION: Choose tracks that execute the thesis. For each track, explain its specific ROLE in the arc, not just why it fits.
+
 SELF-CHECK — Before finalizing, verify each track:
 - "Is this a real, acclaimed artist I can confidently name?" — If unsure, reject it.
 - "Does this track authentically fit the requested genre/mood?" — If borderline, reject it.
 - "Have I already included a track by this artist?" — Enforce the per-artist limit.
 
+PERSONALIZATION RULES FOR PER-TRACK REASONS:
+- Reference the user's #1 artist by name when a track shares sonic DNA with them
+- If a track was chosen because it mirrors a stated user preference (e.g., "melancholy but not defeatist"), say so explicitly
+- For discovery tracks, explain what sonic bridge connects them to the user's known taste
+- Never write generic filler like "fits the vibe" — every reason must be specific to THIS user and THIS intent
+
 OUTPUT FORMAT:
 Return a single JSON object:
 {
   "playlistName": "A creative, evocative 2-6 word title for this playlist",
-  "reflection": "2-3 sentences analyzing your curation decisions — what you prioritized, what you rejected from the pool, and why. Be specific about tradeoffs.",
+  "playlistSummary": "One compelling sentence describing the playlist's emotional arc and sonic identity.",
+  "reflection": "Your selection THESIS first (arc, discovery ratio, exclusions), then 2-3 sentences analyzing tradeoffs.",
   "playlist": [
-    { "id": "track_id", "reason": "1-2 sentences: the track's specific sonic qualities and why it earns its place in THIS playlist." }
+    { "id": "track_id", "reason": "1-2 sentences: this track's ROLE in the arc + connection to user's taste context." }
   ]
 }
 
-Use your judgment on playlist length — the suggested range is a guide, not a rule.
+AIM FOR THE UPPER END of the target track range. A 15-track playlist is significantly better than a 10-track one — more tracks = more value. Only go below the minimum if the pool genuinely doesn't have enough quality tracks.
 Return ONLY valid JSON.`;
 
-    const userMessage = `Candidate Pool:\n${JSON.stringify(poolForPrompt, null, 2)}`;
+    const userMessage = `Candidate Pool (${cleanPool.length} tracks available — choose liberally):\n${JSON.stringify(poolForPrompt, null, 2)}`;
 
     let selectedIds = [];
     let reasonsMap = {};
     let curatorReflection = "Curated automatically based on intent and taste profile.";
     let playlistName = null;
+    let playlistSummary = null;
 
     // Helper: extract JSON from an LLM reply that may be wrapped in markdown fences
     const extractJSON = (text) => {
@@ -286,6 +367,9 @@ Return ONLY valid JSON.`;
       if (parsed.playlistName) {
         playlistName = parsed.playlistName;
       }
+      if (parsed.playlistSummary) {
+        playlistSummary = parsed.playlistSummary;
+      }
       const tracksArray = parsed.playlist || parsed;
       selectedIds = tracksArray.map(p => p.id);
       tracksArray.forEach(p => { reasonsMap[p.id] = p.reason; });
@@ -307,6 +391,9 @@ Return ONLY valid JSON.`;
         if (parsed.playlistName) {
           playlistName = parsed.playlistName;
         }
+        if (parsed.playlistSummary) {
+          playlistSummary = parsed.playlistSummary;
+        }
         const tracksArray = parsed.playlist || parsed;
         selectedIds = tracksArray.map(p => p.id);
         tracksArray.forEach(p => { reasonsMap[p.id] = p.reason; });
@@ -321,8 +408,8 @@ Return ONLY valid JSON.`;
 
     if (onThought) onThought("Mixing and assembling tracks...");
 
-    // Filter the actual candidate objects based on selected IDs
-    let playlist = candidatePool.filter(c => selectedIds.includes(c.track.id));
+    // Filter the actual candidate objects based on selected IDs (search clean pool)
+    let playlist = cleanPool.filter(c => selectedIds.includes(c.track.id));
 
     // Add reasons
     playlist = playlist.map(c => ({
@@ -333,6 +420,30 @@ Return ONLY valid JSON.`;
     // --- Post-selection verification: enforce hard constraints ---
     playlist = this._verifyPlaylist(playlist, params, onThought);
 
+    // --- Enforce minimum playlist length ---
+    // If the LLM returned fewer tracks than the minimum, pad from the clean pool
+    const minTracks = parseInt(params.targetTracks.match(/\d+/)?.[0]) || 12;
+    if (playlist.length < minTracks) {
+      const usedIds = new Set(playlist.map(c => c.track.id));
+      const artistCounts = {};
+      for (const c of playlist) {
+        artistCounts[c.artistName] = (artistCounts[c.artistName] || 0) + 1;
+      }
+      // Pull from clean pool, respecting per-artist cap
+      for (const c of cleanPool) {
+        if (playlist.length >= minTracks) break;
+        if (usedIds.has(c.track.id)) continue;
+        const count = artistCounts[c.artistName] || 0;
+        if (count >= params.maxPerArtistNum) continue;
+        playlist.push({ ...c, dominantFactor: c.dominantFactor || 'Added to reach target playlist length.' });
+        usedIds.add(c.track.id);
+        artistCounts[c.artistName] = count + 1;
+      }
+      if (onThought && playlist.length > selectedIds.length) {
+        onThought(`Curator: Padded playlist from ${selectedIds.length} → ${playlist.length} tracks to meet minimum`);
+      }
+    }
+
     // Weighted shuffle to mix up the order
     playlist = playlist.map(value => ({ value, sort: Math.random() }))
                        .sort((a, b) => a.sort - b.sort)
@@ -341,6 +452,7 @@ Return ONLY valid JSON.`;
     // Attach metadata to the final array so the Orchestrator can grab it
     playlist.curatorReflection = curatorReflection;
     playlist.playlistName = playlistName;
+    playlist.playlistSummary = playlistSummary;
 
     if (onThought) onThought(`Curator: Final playlist — ${playlist.length} tracks from ${new Set(playlist.map(t => t.artistName)).size} artists`);
 

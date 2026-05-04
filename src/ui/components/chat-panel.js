@@ -21,6 +21,7 @@ export class ChatPanel {
     this.isOpen       = false;
     this.container    = null;
     this.panel        = null;
+    this._openingShown = false; // Sprint 5.2: only fire proactive message once
   }
 
   mount(appEl) {
@@ -96,6 +97,25 @@ export class ChatPanel {
       this.panel.style.pointerEvents = 'all';
       this.fabBtn.innerHTML = '✕';
       document.getElementById('chat-input')?.focus();
+
+      // Sprint 5.2: Proactive opening message — fires once per session
+      if (!this._openingShown) {
+        this._openingShown = true;
+        const context = this.getContext ? this.getContext() : null;
+        try {
+          const openingMsg = this.concierge.generateOpeningMessage(context);
+          if (openingMsg) {
+            const messagesEl = document.getElementById('chat-messages');
+            if (messagesEl) {
+              // Small delay so the panel animation completes first
+              setTimeout(() => {
+                messagesEl.insertAdjacentHTML('beforeend', this._botBubble(openingMsg));
+                messagesEl.scrollTop = messagesEl.scrollHeight;
+              }, 350);
+            }
+          }
+        } catch (e) { /* Opening message is best-effort */ }
+      }
     } else {
       this.panel.style.opacity     = '0';
       this.panel.style.transform   = 'translateY(20px) scale(0.95)';

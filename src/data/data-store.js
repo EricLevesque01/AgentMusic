@@ -271,6 +271,7 @@ export class DataStore {
       curatorReflection: context.curatorReflection || '',
       context: serializable,
     };
+    context.id = entry.id; // Tag the live context with its library ID so views can update it later
     library.unshift(entry);
 
     // Cap at 20 playlists to manage storage
@@ -293,6 +294,25 @@ export class DataStore {
     if (entry) {
       entry.listenedAt = Date.now();
       this.save('playlist_library', library);
+    }
+  }
+
+  /**
+   * Mark a playlist as saved to Spotify.
+   */
+  static markPlaylistSavedToSpotify(id) {
+    const library = this.getPlaylistLibrary();
+    const entry = library.find(p => p.id === id);
+    if (entry) {
+      entry.context.savedToSpotify = true;
+      this.save('playlist_library', library);
+      // Also update legacy if it exists
+      const saved = this.getSavedPlaylists();
+      const legacyEntry = saved.find(p => p.id === id || p.context.id === id);
+      if (legacyEntry) {
+        legacyEntry.context.savedToSpotify = true;
+        this.save('saved_playlists', saved);
+      }
     }
   }
 

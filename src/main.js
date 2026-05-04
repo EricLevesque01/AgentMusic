@@ -14,6 +14,7 @@ import { ChatPanel } from './ui/components/chat-panel.js';
 import { handleCallback, isAuthenticated, clearTokens } from './auth/spotify-auth.js';
 import { Orchestrator } from './agents/orchestrator.js';
 import { SessionDJAgent } from './agents/session-dj-agent.js';
+import { PlaylistScheduler } from './agents/playlist-scheduler.js';
 import { DataStore } from './data/data-store.js';
 
 // Route definitions
@@ -44,13 +45,7 @@ function navigate() {
   document.getElementById('sidebar')?.classList.remove('hidden');
 
   const route = getCurrentRoute();
-  
-  // Hide nav and FAB on home page for a clean landing experience
-  if (route === '#/') {
-    document.body.classList.add('nav-hidden');
-  } else {
-    document.body.classList.remove('nav-hidden');
-  }
+  document.getElementById('sidebar')?.classList.remove('hidden');
 
   const renderFn = routes[route];
   if (pageContainer && renderFn) {
@@ -131,6 +126,24 @@ async function init() {
     );
     chatPanel.mount(app);
     window.TG.chatPanel = chatPanel;
+
+    // Start background playlist generation
+    const scheduler = new PlaylistScheduler(orchestrator);
+    scheduler.start();
+    window.TG.scheduler = scheduler;
+  }
+
+  // On boot, if suggested artists cache has fewer than 6 items, clear it
+  // so it regenerates with the new higher-quantity parameters
+  const cachedArtists = DataStore.getSuggestedArtistsCache();
+  if (cachedArtists && cachedArtists.length < 6) {
+    DataStore.clearSuggestedArtistsCache();
+  }
+
+  // Clear legacy agentic profile cache to force regeneration of the new dynamic layout
+  const cachedProfile = DataStore.load('agentic_profile_cache');
+  if (cachedProfile && !cachedProfile.profile) {
+    localStorage.removeItem('tastegraph_agentic_profile_cache');
   }
 
   // Set up routing
@@ -213,12 +226,15 @@ function showDJModal(adjustments, orchestrator) {
       const type = feedbackBtn.dataset.feedback;
       window.TG.dj?.applyFeedback(type);
       modal.remove();
-      try {
-        const ctx = await orchestrator.rerank(window.TG.dj.adjustments);
-        window.TG.lastContext = ctx;
-        window.dispatchEvent(new CustomEvent('tastegraph:playlist-updated'));
-      } catch (err) {
-        console.warn('DJ re-rank failed:', err.message);
+      const adjustments = window.TG.dj?.adjustments;
+      if (adjustments) {
+        try {
+          const ctx = await orchestrator.rerank(adjustments);
+          window.TG.lastContext = ctx;
+          window.dispatchEvent(new CustomEvent('tastegraph:playlist-updated'));
+        } catch (err) {
+          console.warn('DJ re-rank failed:', err.message);
+        }
       }
     }
     if (e.target.id === 'dj-dismiss') modal.remove();

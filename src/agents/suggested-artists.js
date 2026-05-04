@@ -25,10 +25,23 @@ export class SuggestedArtistsAgent {
    * @param {object} eloRatings — full Elo map for filtering out known artists
    * @returns {Array<{ name, imageUrl, reason, category, spotifyId }>}
    */
-  async generate(topArtists, eloRatings = {}) {
-    // Check cache first
+  async generate(topArtists, eloRatings = {}, { force = false } = {}) {
+    // Check cache first (skip on forced refresh)
+    // Also evict stale/thin caches so a fresh run replaces bad old results
     const cached = DataStore.getSuggestedArtistsCache();
-    if (cached && cached.length > 0) return cached;
+    if (!force && cached && cached.length >= 6) {
+      // Evict stale cache if too many reasons are generic API boilerplate
+      const genericPatterns = ['fans also listen', 'similar to', 'influenced ', 'member of', 'performed with', 'connected to', 'collaborated with'];
+      const genericCount = cached.filter(a =>
+        !a.reason || a.reason.length < 15 ||
+        genericPatterns.some(p => a.reason.toLowerCase().startsWith(p))
+      ).length;
+      if (genericCount <= Math.floor(cached.length * 0.4)) {
+        return cached; // Cache quality is acceptable
+      }
+      // Otherwise, fall through and regenerate
+      console.log('SuggestedArtists: Cache has too many generic blurbs — regenerating.');
+    }
 
     const knownNames = new Set(
       Object.values(eloRatings)
@@ -66,7 +79,7 @@ export class SuggestedArtistsAgent {
     // Track how many suggestions each seed artist has contributed
     // to prevent any single seed from dominating the results.
     const seedContributions = new Map(); // seedName → count
-    const MAX_PER_SEED = 1; // Drastically reduced from 3 to prevent Last.fm dominance
+    const MAX_PER_SEED = 2; // Allow 2 suggestions per seed artist for richer results
 
     // === Layer 1: Structured APIs (fast, free) ===
     // Run MusicBrainz FIRST because it has highly accurate "member of band" relationships,
@@ -276,11 +289,13 @@ their taste DNA. Consider:
 4. CRITICAL PICKS — acclaimed artists that match their psychometric profile
 
 IMPORTANT RULES:
-- Avoid "dumb" or obvious connections.
+- Only suggest artists with a real, verifiable music career — albums, reviews, critical acclaim, cultural footprint.
+- DO NOT suggest ambient/lo-fi/study music channels, AI-generated artists, or content farms.
+- Avoid extremely obscure underground acts that most music fans haven't heard of.
 - If an artist is a member of a band the user loves (e.g. Julien Baker or Lucy Dacus and boygenius, Thom Yorke and Radiohead), you MUST explicitly acknowledge it (e.g. "Going solo from boygenius").
 - KEEP REASONS EXTREMELY CONCISE. Just a tiny blurb of 3-6 words. No full sentences.
 
-Submit 10-12 artists. Each must be a real artist on Spotify.
+Submit 10-12 artists. Each must be a real, well-known artist on Spotify with genuine critical acclaim or cultural significance.
 For the \`reason\`, DO NOT just say "Similar to X". Instead, explicitly state the INSIGHT or DIRECTION in a few words.
 Example reasons:
 - "Deepening your Jazz exploration"
@@ -367,17 +382,25 @@ Example reasons:
       .map(([name, s]) => `- ${name} (source: ${s.category}, original: "${s.reason}")`)
       .join('\n');
 
-    const prompt = `You are a music expert. Rewrite each suggestion reason to be more specific and insightful.
-Use your knowledge of music history, family connections, shared bands, production credits, genre evolution, etc.
+    const prompt = `You are a music expert and concise copywriter. Rewrite each artist suggestion reason into a punchy, insight-driven blurb.
 
-User's artists: ${seedNames.join(', ')}
+User's taste anchors: ${seedNames.join(', ')}
 
 Suggestions to improve:
 ${artistList}
 
-For each artist, write ONE concise sentence (under 12 words) explaining the REAL connection.
-Be specific — mention shared bands, family ties, producers, scenes, or sonic DNA.
-If the original reason is already good, keep it.
+RULES:
+- Each reason must be 6-12 words.
+- State the SPECIFIC non-obvious connection (shared band, producer, family, scene, sonic DNA, genre bridge).
+- NEVER say "Similar to X" or "Fans also listen to X" — that's what we're replacing.
+- If someone is a family member, bandmate, or has a direct creative connection, SAY IT.
+- If the connection is genre/scene-based, name the specific genre or scene.
+- Examples of GOOD reasons:
+  "Jeff Buckley's father — ethereal vocal pioneer"
+  "Radiohead's lead guitarist going solo"
+  "Post-punk meets krautrock — Berlin scene roots"
+  "Shares a producer with Fontaines DC"
+  "Gateway into modern neo-soul from R&B"
 
 Respond as JSON: { "reasons": { "Artist Name": "improved reason", ... } }`;
 
@@ -440,8 +463,9 @@ Respond as JSON: { "reasons": { "Artist Name": "improved reason", ... } }`;
             return; // No close match → probably hallucinated, skip it
           }
 
-          // Minimum popularity filter: reject obscure AI-generated or compilation channels
-          if ((bestMatch.popularity || 0) < 5) {
+          // Minimum popularity filter: reject AI-generated or pure content farms
+          // Threshold 10 = artist has at least some real fanbase; blocks spam without cutting indie acts
+          if ((bestMatch.popularity || 0) < 10) {
             console.debug(`SuggestedArtists: Rejected "${bestMatch.name}" — popularity too low (${bestMatch.popularity})`);
             return;
           }

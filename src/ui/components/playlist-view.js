@@ -12,6 +12,78 @@ export class PlaylistView {
     this._listenStart = null;
   }
 
+  /**
+   * Sprint 5.1: Render provenance badges for a track card.
+   * Makes the pipeline's reasoning visible — discovery vs seed, cultural vs graph.
+   */
+  _renderTrackBadges(candidate) {
+    const { hopDistance = 0, source = '' } = candidate;
+    const badges = [];
+
+    // Source type
+    if (['web_discovery', 'cultural_discovery'].includes(source)) {
+      badges.push(`<span title="Found via live web research" style="
+        display:inline-flex;align-items:center;gap:3px;
+        background:rgba(99,102,241,0.18);color:#a5b4fc;
+        border:1px solid rgba(99,102,241,0.3);
+        border-radius:999px;padding:2px 8px;font-size:10px;font-weight:600;
+        letter-spacing:0.03em;white-space:nowrap;
+      ">🌐 Web</span>`);
+    } else if (source === 'graph_hop') {
+      badges.push(`<span title="Found via taste graph traversal" style="
+        display:inline-flex;align-items:center;gap:3px;
+        background:rgba(16,185,129,0.15);color:#6ee7b7;
+        border:1px solid rgba(16,185,129,0.25);
+        border-radius:999px;padding:2px 8px;font-size:10px;font-weight:600;
+        letter-spacing:0.03em;white-space:nowrap;
+      ">🗺️ Graph</span>`);
+    } else if (hopDistance >= 1) {
+      badges.push(`<span title="Discovery: ${hopDistance} hop${hopDistance > 1 ? 's' : ''} from your taste" style="
+        display:inline-flex;align-items:center;gap:3px;
+        background:rgba(245,158,11,0.15);color:#fcd34d;
+        border:1px solid rgba(245,158,11,0.25);
+        border-radius:999px;padding:2px 8px;font-size:10px;font-weight:600;
+        letter-spacing:0.03em;white-space:nowrap;
+      ">🔍 Discovery${hopDistance > 1 ? ` ×${hopDistance}` : ''}</span>`);
+    }
+
+    // Anti-repetition freshness — if this is a seed artist (hop 0) and new to playlists
+    if (hopDistance === 0 && !['web_discovery', 'cultural_discovery', 'graph_hop'].includes(source)) {
+      badges.push(`<span title="A core artist from your taste profile" style="
+        display:inline-flex;align-items:center;gap:3px;
+        background:rgba(61,139,255,0.12);color:#93c5fd;
+        border:1px solid rgba(61,139,255,0.2);
+        border-radius:999px;padding:2px 8px;font-size:10px;font-weight:600;
+        letter-spacing:0.03em;white-space:nowrap;
+      ">⭐ Taste Pick</span>`);
+    }
+
+    return badges.length > 0
+      ? `<div style="display:flex;flex-wrap:wrap;gap:4px;margin-top:var(--space-2);">${badges.join('')}</div>`
+      : '';
+  }
+
+  /** Detect boilerplate curator reflection strings. */
+  _isGenericReflection(text) {
+    if (!text) return true;
+    const generic = [
+      'curated automatically based on intent and taste profile',
+      'curated by the agent music pipeline',
+    ];
+    return generic.some(g => text.toLowerCase().includes(g));
+  }
+
+  /** Detect generic per-track explanation text. */
+  _isGenericText(text) {
+    if (!text) return true;
+    const generic = [
+      'selected based on your taste profile',
+      'selected for this playlist based on your taste profile',
+      'added to reach target playlist length',
+    ];
+    return generic.some(g => text.toLowerCase().includes(g));
+  }
+
   render(context) {
     const { scoredPlaylist, explanations } = context;
     if (!scoredPlaylist || scoredPlaylist.length === 0) {
@@ -23,6 +95,21 @@ export class PlaylistView {
       return;
     }
 
+    // Derive the best available title and summary from the context
+    const playlistTitle = explanations?.playlistTitle
+      || context.playlistName
+      || context.sessionIntent?.slice(0, 60)
+      || 'Your Playlist';
+
+    // Best summary: playlistSummary → curatorReflection (if non-generic) → intent → nothing
+    const playlistSummary = (() => {
+      const s = explanations?.playlistSummary;
+      if (s && !this._isGenericReflection(s)) return s;
+      const r = context.curatorReflection;
+      if (r && !this._isGenericReflection(r)) return r;
+      return context.sessionIntent || '';
+    })();
+
     this.container.innerHTML = `
       <div id="playlist-wrap" style="animation: fadeInUp 350ms ease forwards;">
 
@@ -30,20 +117,22 @@ export class PlaylistView {
         <div class="pro-panel" style="padding:var(--space-4) var(--space-5);
              margin-bottom:var(--space-4);display:flex;justify-content:space-between;align-items:center;gap:var(--space-4);">
           <div style="flex:1;">
-            <div class="section-label" style="margin-bottom:var(--space-1); font-size:var(--font-size-lg); color:var(--text-primary);">${explanations?.playlistTitle || 'Generated Playlist'}</div>
+            <div class="section-label" style="margin-bottom:var(--space-1); font-size:var(--font-size-lg); color:var(--text-primary);">${playlistTitle}</div>
+            ${playlistSummary ? `
             <p style="color:var(--text-secondary);font-size:var(--font-size-sm);
-                      font-style:italic;margin-bottom:var(--space-2);">${explanations?.playlistSummary || 'Curated by the Agent Music pipeline based on your taste profile.'}</p>
-            ${context.curatorReflection ? `
-            <div style="padding:var(--space-3); background:var(--bg-tertiary); border-left:3px solid var(--accent-primary); border-radius:var(--radius-sm); margin-top:var(--space-3);">
-              <div style="font-size:var(--font-size-xs); color:var(--accent-primary); text-transform:uppercase; letter-spacing:0.05em; margin-bottom:4px; font-weight:var(--font-weight-bold);">Curator's Reflection</div>
-              <p style="color:var(--text-primary); font-size:var(--font-size-sm); line-height:1.5;">${context.curatorReflection}</p>
-            </div>
-            ` : ''}
+                      font-style:italic;margin-bottom:var(--space-2);">${playlistSummary}</p>` : ''}
           </div>
+          ${context.savedToSpotify ? `
+          <button id="btn-save-spotify" class="btn btn-sm" disabled
+                  style="background:var(--bg-tertiary);color:var(--text-primary);border-color:var(--border-subtle);flex-shrink:0;font-weight:700;">
+            Saved ✓
+          </button>
+          ` : `
           <button id="btn-save-spotify" class="btn btn-sm"
                   style="background:#1DB954;color:#000;border-color:#1DB954;flex-shrink:0;font-weight:700;">
             Save to Spotify
           </button>
+          `}
         </div>
 
         <!-- Track list -->
@@ -55,7 +144,7 @@ export class PlaylistView {
 
     // Save to Spotify
     const saveBtn = document.getElementById('btn-save-spotify');
-    if (saveBtn) {
+    if (saveBtn && !context.savedToSpotify) {
       saveBtn.addEventListener('click', async () => {
         saveBtn.disabled = true;
         saveBtn.innerText = 'Saving…';
@@ -63,10 +152,16 @@ export class PlaylistView {
           const { isAuthenticated, redirectToSpotifyLogin } = await import('../../auth/spotify-auth.js');
           if (!isAuthenticated()) { await redirectToSpotifyLogin(); return; }
           const { getCurrentUser, createPlaylist, addTracksToPlaylist } = await import('../../data/spotify-api.js');
+          const { DataStore } = await import('../../data/data-store.js');
+
           const user = await getCurrentUser();
           const uris = scoredPlaylist.map(c => `spotify:track:${c.track.id}`);
           const pl = await createPlaylist(user.id, explanations?.playlistTitle || `Agent Music: ${new Date().toLocaleDateString()}`, explanations?.playlistSummary || '');
           await addTracksToPlaylist(pl.id, uris);
+          
+          context.savedToSpotify = true;
+          if (context.id) DataStore.markPlaylistSavedToSpotify(context.id);
+
           saveBtn.innerText = 'Saved ✓';
           saveBtn.style.cssText += ';background:var(--bg-tertiary);color:var(--text-primary);border-color:var(--border-subtle);';
         } catch (err) {
@@ -86,14 +181,16 @@ export class PlaylistView {
     if (!track) return ''; // Safety: skip invalid entries
     const albumImg = track.album?.images?.[0]?.url;
     const previewUrl = track.preview_url || '';
-    // Priority: Narrator's per-track explanation > Curator's dominantFactor > fallback
-    const narratorExplanation = explanations?.trackExplanations instanceof Map
+    // Priority: Curator's dominantFactor (primary) > explanations map (fallback) > context-aware generic
+    const mapExplanation = explanations?.trackExplanations instanceof Map
       ? explanations.trackExplanations.get(track.id)
       : explanations?.trackExplanations?.[track.id];
-    
-    const explanation = narratorExplanation
-      || (dominantFactor && dominantFactor !== 'Selected based on your taste profile.' ? dominantFactor : null)
-      || 'Curator selected this track based on the overall session intent and your taste profile.';
+    // Use the real Curator reason, or silence the fallback — the badge provides visual context
+    const explanation = (dominantFactor && !this._isGenericText(dominantFactor))
+      ? dominantFactor
+      : (mapExplanation && !this._isGenericText(mapExplanation))
+        ? mapExplanation
+        : '';
 
     return `
       <div class="glass-card" id="track-card-${index}"
@@ -124,8 +221,9 @@ export class PlaylistView {
           <div style="flex:1;min-width:0;">
             <div style="font-weight:var(--font-weight-bold);font-size:var(--font-size-md);
                         white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:var(--text-bright);">${track.name}</div>
-            <div style="font-size:var(--font-size-sm);color:var(--text-secondary);margin-top:2px;margin-bottom:var(--space-2);">${artistName}</div>
-            <p style="font-size:var(--font-size-sm);color:var(--text-primary);line-height:1.5;">${explanation}</p>
+            <div style="font-size:var(--font-size-sm);color:var(--text-secondary);margin-top:2px;${explanation ? 'margin-bottom:var(--space-2)' : ''};">${artistName}</div>
+            ${explanation ? `<p style="font-size:var(--font-size-sm);color:var(--text-primary);line-height:1.5;">${explanation}</p>` : ''}
+            ${this._renderTrackBadges(candidate)}
             ${previewUrl ? `
             <div style="margin-top:var(--space-2);">
               <audio id="audio-pl-${index}" src="${previewUrl}" preload="none"></audio>

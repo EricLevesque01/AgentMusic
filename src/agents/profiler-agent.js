@@ -242,58 +242,6 @@ export class ProfilerAgent {
     return existing;
   }
 
-  /**
-   * Compute aggregate audio profile from audio feature objects.
-   * (Kept for tests and future use if audio features become available.)
-   */
-  computeAudioProfile(audioFeatures) {
-    if (!audioFeatures || audioFeatures.length === 0) {
-      return { avgEnergy: 0.5, avgValence: 0.5, avgTempo: 120, avgDanceability: 0.5 };
-    }
-
-    const sum = audioFeatures.reduce(
-      (acc, f) => ({
-        energy:       acc.energy + (f.energy || 0),
-        valence:      acc.valence + (f.valence || 0),
-        tempo:        acc.tempo + (f.tempo || 0),
-        danceability: acc.danceability + (f.danceability || 0),
-      }),
-      { energy: 0, valence: 0, tempo: 0, danceability: 0 },
-    );
-
-    const n = audioFeatures.length;
-    return {
-      avgEnergy:       sum.energy / n,
-      avgValence:      sum.valence / n,
-      avgTempo:        sum.tempo / n,
-      avgDanceability: sum.danceability / n,
-    };
-  }
-
-  /**
-   * Derive a proxy audio profile from Spotify track objects.
-   * Uses track.popularity (0–100) as a proxy since the audio-features
-   * endpoint was deprecated for new apps in 2024.
-   *
-   * Popularity → normalized to 0–1 as a rough energy/mainstream proxy.
-   * This will be enriched with Last.fm tags by the Scout Agent in Phase 5.
-   */
-  computeAudioProfileFromTracks(tracks) {
-    if (!tracks || tracks.length === 0) {
-      return { avgEnergy: 0.5, avgValence: 0.5, avgTempo: 120, avgDanceability: 0.5 };
-    }
-
-    const avgPopularity = tracks.reduce((sum, t) => sum + (t.popularity || 50), 0) / tracks.length;
-    const normalizedPop = avgPopularity / 100;
-
-    // Use popularity as a broad mainstream/energy proxy
-    return {
-      avgEnergy:       normalizedPop,
-      avgValence:      0.5, // unknown without audio features
-      avgTempo:        120, // unknown without audio features
-      avgDanceability: normalizedPop,
-    };
-  }
 
   /**
    * Aggregate genres from a list of artists to find the most dominant macro-genres.

@@ -3,7 +3,7 @@ import { Orchestrator } from '../src/agents/orchestrator.js';
 import { ProfilerAgent } from '../src/agents/profiler-agent.js';
 import { ScoutAgent } from '../src/agents/scout-agent.js';
 import { CuratorAgent } from '../src/agents/curator-agent.js';
-import { NarratorAgent } from '../src/agents/narrator-agent.js';
+import { CulturalScout } from '../src/agents/cultural-scout.js';
 
 /**
  * Extended Orchestrator tests
@@ -63,10 +63,8 @@ function setupMocks(orchestrator) {
   vi.spyOn(ProfilerAgent.prototype, 'buildTasteState').mockResolvedValue(mockTasteState);
   vi.spyOn(ScoutAgent.prototype, 'findCandidates').mockResolvedValue(mockCandidate);
   vi.spyOn(CuratorAgent.prototype, 'rankAndSelect').mockResolvedValue(mockCandidate);
-  vi.spyOn(NarratorAgent.prototype, 'generate').mockResolvedValue({
-    playlistSummary: 'A deeply introspective set',
-    trackExplanations: new Map([['t1', 'Pure Buckley energy']]),
-  });
+  // Mock CulturalScout so tests don't hit the live Gemini API and timeout
+  vi.spyOn(CulturalScout.prototype, 'research').mockResolvedValue(undefined);
 }
 
 // --- Tests ---
@@ -75,7 +73,7 @@ describe('Orchestrator — _populateTasteProfile', () => {
   it('should identify the anchored #1 when settled', async () => {
     const orch = new Orchestrator();
     setupMocks(orch);
-    const ctx = await orch.generatePlaylist('user1', { discovery: 0.5 });
+    const ctx = await orch.generatePlaylist('user1', 'a rock mix');
 
     expect(ctx.tasteProfile.anchoredTopArtist).toBe('Jeff Buckley');
     expect(ctx.settledAnchors).toContain('jb');
@@ -84,7 +82,7 @@ describe('Orchestrator — _populateTasteProfile', () => {
   it('should collect ALL settled artists, not just #1', async () => {
     const orch = new Orchestrator();
     setupMocks(orch);
-    const ctx = await orch.generatePlaylist('user1', {});
+    const ctx = await orch.generatePlaylist('user1', 'a rock mix');
 
     // jb (10 comps, 100% WR) and bad (7 comps, 0% WR) are both settled
     expect(ctx.settledAnchors).toContain('jb');
@@ -98,7 +96,7 @@ describe('Orchestrator — _populateTasteProfile', () => {
   it('should rank dominant genres by total comparison weight', async () => {
     const orch = new Orchestrator();
     setupMocks(orch);
-    const ctx = await orch.generatePlaylist('user1', {});
+    const ctx = await orch.generatePlaylist('user1', 'a rock mix');
 
     // folk rock: jb(10) = 10
     // dream pop: jb(10) = 10
@@ -114,7 +112,7 @@ describe('Orchestrator — _populateTasteProfile', () => {
   it('should identify under-explored genres (fewest comparisons)', async () => {
     const orch = new Orchestrator();
     setupMocks(orch);
-    const ctx = await orch.generatePlaylist('user1', {});
+    const ctx = await orch.generatePlaylist('user1', 'a rock mix');
 
     // indie(4) is the least-compared genre
     expect(ctx.tasteProfile.underExploredGenres).toContain('indie');
@@ -132,11 +130,9 @@ describe('Orchestrator — _populateTasteProfile', () => {
     const orch = new Orchestrator();
     vi.spyOn(ScoutAgent.prototype, 'findCandidates').mockResolvedValue(mockCandidate);
     vi.spyOn(CuratorAgent.prototype, 'rankAndSelect').mockResolvedValue(mockCandidate);
-    vi.spyOn(NarratorAgent.prototype, 'generate').mockResolvedValue({
-      playlistSummary: 'Test', trackExplanations: new Map(),
-    });
 
-    const ctx = await orch.generatePlaylist('user1', {});
+
+    const ctx = await orch.generatePlaylist('user1', 'a rock mix');
     expect(ctx.tasteProfile.anchoredTopArtist).toBeNull();
     expect(ctx.settledAnchors).not.toContain('jb');
   });
@@ -147,11 +143,9 @@ describe('Orchestrator — _populateTasteProfile', () => {
     const orch = new Orchestrator();
     vi.spyOn(ScoutAgent.prototype, 'findCandidates').mockResolvedValue(mockCandidate);
     vi.spyOn(CuratorAgent.prototype, 'rankAndSelect').mockResolvedValue(mockCandidate);
-    vi.spyOn(NarratorAgent.prototype, 'generate').mockResolvedValue({
-      playlistSummary: 'Test', trackExplanations: new Map(),
-    });
 
-    const ctx = await orch.generatePlaylist('user1', {});
+
+    const ctx = await orch.generatePlaylist('user1', 'a rock mix');
     expect(ctx.tasteProfile.anchoredTopArtist).toBeNull();
     expect(ctx.settledAnchors).toEqual([]);
     expect(ctx.tasteProfile.dominantGenres).toEqual([]);
@@ -164,7 +158,7 @@ describe('Orchestrator — handleConciergeAction', () => {
   beforeEach(async () => {
     orch = new Orchestrator();
     setupMocks(orch);
-    await orch.generatePlaylist('user1', { discovery: 0.5 });
+    await orch.generatePlaylist('user1', 'a rock mix');
   });
 
   it('should treat legacy adjust_sliders as unknown action', async () => {
@@ -237,7 +231,7 @@ describe('Orchestrator — rerank', () => {
   it('should merge session adjustments on rerank', async () => {
     const orch = new Orchestrator();
     setupMocks(orch);
-    await orch.generatePlaylist('user1', {});
+    await orch.generatePlaylist('user1', 'a rock mix');
 
     const result = await orch.rerank({
       penalizedGenres: ['hip hop'],
@@ -259,13 +253,11 @@ describe('Orchestrator — context threading', () => {
     const scoutSpy = vi.spyOn(ScoutAgent.prototype, 'findCandidates').mockResolvedValue(mockCandidate);
     vi.spyOn(ProfilerAgent.prototype, 'buildTasteState').mockResolvedValue(mockTasteState);
     vi.spyOn(CuratorAgent.prototype, 'rankAndSelect').mockResolvedValue(mockCandidate);
-    vi.spyOn(NarratorAgent.prototype, 'generate').mockResolvedValue({
-      playlistSummary: 'Test', trackExplanations: new Map(),
-    });
+    vi.spyOn(CulturalScout.prototype, 'research').mockResolvedValue(undefined);
 
-    await orch.generatePlaylist('user1', {});
+    await orch.generatePlaylist('user1', 'a rock mix');
 
-    // Scout should have been called with 4 args: tasteState, sliders, context, onThought
+    // Scout should have been called with 4 args: tasteState, sessionIntent, context, onThought
     expect(scoutSpy).toHaveBeenCalledTimes(1);
     const callArgs = scoutSpy.mock.calls[0];
     expect(callArgs.length).toBe(4);
@@ -278,34 +270,15 @@ describe('Orchestrator — context threading', () => {
     vi.spyOn(ProfilerAgent.prototype, 'buildTasteState').mockResolvedValue(mockTasteState);
     vi.spyOn(ScoutAgent.prototype, 'findCandidates').mockResolvedValue(mockCandidate);
     const curatorSpy = vi.spyOn(CuratorAgent.prototype, 'rankAndSelect').mockResolvedValue(mockCandidate);
-    vi.spyOn(NarratorAgent.prototype, 'generate').mockResolvedValue({
-      playlistSummary: 'Test', trackExplanations: new Map(),
-    });
+    vi.spyOn(CulturalScout.prototype, 'research').mockResolvedValue(undefined);
 
-    await orch.generatePlaylist('user1', {});
+    await orch.generatePlaylist('user1', 'a rock mix');
 
-    // Curator: tasteState, candidatePool, sliders, sessionAdjustments, context
+    // Curator: tasteState, candidatePool, sessionIntent, sessionAdjustments, context, onThought
     expect(curatorSpy).toHaveBeenCalledTimes(1);
     const callArgs = curatorSpy.mock.calls[0];
     expect(callArgs.length).toBe(6);
     expect(callArgs[4]).toHaveProperty('coverageGaps');
   });
 
-  it('should pass context as final argument to Narrator', async () => {
-    const orch = new Orchestrator();
-    vi.spyOn(ProfilerAgent.prototype, 'buildTasteState').mockResolvedValue(mockTasteState);
-    vi.spyOn(ScoutAgent.prototype, 'findCandidates').mockResolvedValue(mockCandidate);
-    vi.spyOn(CuratorAgent.prototype, 'rankAndSelect').mockResolvedValue(mockCandidate);
-    const narratorSpy = vi.spyOn(NarratorAgent.prototype, 'generate').mockResolvedValue({
-      playlistSummary: 'Test', trackExplanations: new Map(),
-    });
-
-    await orch.generatePlaylist('user1', {});
-
-    // Narrator: scoredPlaylist, tasteState, sliders, context, onThought
-    expect(narratorSpy).toHaveBeenCalledTimes(1);
-    const callArgs = narratorSpy.mock.calls[0];
-    expect(callArgs.length).toBe(5);
-    expect(callArgs[3]).toHaveProperty('sessionSignals');
-  });
 });

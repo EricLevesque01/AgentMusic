@@ -75,15 +75,19 @@ export function renderHomePage(container) {
 
     if (playlists.length === 0) {
       gridEl.innerHTML = `
-        <div class="empty-library">
-          <div style="font-size: 2.5rem; margin-bottom: var(--space-4); opacity: 0.6;">🎵</div>
-          <h3 style="font-size: var(--font-size-lg); font-weight: var(--font-weight-bold); margin-bottom: var(--space-2);">No playlists yet</h3>
-          <p style="color: var(--text-muted); margin-bottom: var(--space-5); max-width: 300px;">
-            Compare some artists first, then your agents will start curating playlists for you.
+        <div style="display: flex; flex-direction: column; align-items: center; text-align: center; padding: var(--space-8) var(--space-4);">
+          <div style="width: 80px; height: 80px; border-radius: 50%; background: linear-gradient(135deg, rgba(61,139,255,0.2), rgba(99,102,241,0.15)); display: flex; align-items: center; justify-content: center; margin-bottom: var(--space-5); box-shadow: 0 0 30px rgba(61,139,255,0.15);">
+            <span style="font-size: 2rem;">✨</span>
+          </div>
+          <h3 style="font-size: var(--font-size-xl); font-weight: var(--font-weight-bold); margin-bottom: var(--space-2); color: var(--text-bright);">Your Discovery Feed</h3>
+          <p style="color: var(--text-secondary); margin-bottom: var(--space-5); max-width: 360px; line-height: 1.6;">
+            AI agents will curate personalized playlists here. Get started by ranking your favorite artists or describing a vibe.
           </p>
-          <div style="display: flex; gap: var(--space-3);">
-            <button class="btn btn-primary" onclick="location.hash='#/game'">Compare Artists</button>
-            <button class="btn btn-secondary" onclick="location.hash='#/playlist'">Create Manually</button>
+          <div style="display: flex; gap: var(--space-3); flex-wrap: wrap; justify-content: center;">
+            <button class="btn btn-primary btn-lg" onclick="location.hash='#/playlist'; setTimeout(() => document.getElementById('toggle-generator-btn')?.click(), 200)">
+              <span style="margin-right: 6px;">🎵</span> Generate a Playlist
+            </button>
+            <button class="btn btn-secondary" onclick="location.hash='#/game'">Compare Artists</button>
           </div>
         </div>
       `;
@@ -177,11 +181,23 @@ export function renderHomePage(container) {
   // === Suggested Artists ===
   async function loadSuggestions() {
     const eloRatings = DataStore.getEloRatings();
-    const topArtists = Object.entries(eloRatings)
+    let topArtists = Object.entries(eloRatings)
       .filter(([, d]) => d.name && d.rating > 1400)
       .sort((a, b) => b[1].rating - a[1].rating)
       .slice(0, 8)
       .map(([id, d]) => ({ id, name: d.name, genres: d.genres || [] }));
+
+    // Fallback: use Spotify top artists if Elo data is too thin
+    if (topArtists.length < 3) {
+      try {
+        const cached = DataStore.getTopArtists();
+        if (cached && cached.length >= 3) {
+          topArtists = cached.slice(0, 8).map(a => ({
+            id: a.id, name: a.name, genres: a.genres || [],
+          }));
+        }
+      } catch (e) { /* Spotify data not cached yet */ }
+    }
 
     if (topArtists.length < 3) {
       suggestionContainer.innerHTML = '';
@@ -213,55 +229,18 @@ export function renderHomePage(container) {
     `;
 
     document.getElementById('refresh-suggestions-btn').addEventListener('click', () => {
-      DataStore.clearSuggestedArtistsCache();
-      loadSuggestions();
+      _triggerRefresh();
     });
 
     try {
       const agent = new SuggestedArtistsAgent();
       const suggestions = await agent.generate(topArtists, eloRatings);
 
-      renderSuggestionRow(suggestionContainer, suggestions, (artist, action) => {
-        switch (action) {
-          case 'playlist':
-            location.hash = '#/playlist';
-            // Defer to let navigation happen, then trigger generation
-            setTimeout(() => {
-              const vibeInput = document.getElementById('vibe-input');
-              if (vibeInput) vibeInput.value = `Build a playlist around ${artist.name} — ${artist.reason}`;
-              document.getElementById('toggle-generator-btn')?.click();
-            }, 200);
-            break;
-
-          case 'compare':
-            if (typeof window !== 'undefined' && artist.spotifyId) {
-              window.dispatchEvent(new CustomEvent('tastegraph:inject-artists', {
-                detail: [artist.name],
-              }));
-              location.hash = '#/game';
-            }
-            break;
-
-          case 'dismiss':
-            // Remove from cache
-            const cached = DataStore.getSuggestedArtistsCache() || [];
-            DataStore.setSuggestedArtistsCache(cached.filter(a => a.name !== artist.name));
-            // Re-render
-            renderSuggestionRow(
-              suggestionContainer,
-              cached.filter(a => a.name !== artist.name),
-              arguments[1]
-            );
-            break;
-        }
-      });
+      renderSuggestionRow(suggestionContainer, suggestions, _handleAction);
 
       const loadedBtn = document.getElementById('refresh-suggestions-btn-loaded');
       if (loadedBtn) {
-        loadedBtn.addEventListener('click', () => {
-          DataStore.clearSuggestedArtistsCache();
-          loadSuggestions();
-        });
+        loadedBtn.addEventListener('click', () => _triggerRefresh());
       }
     } catch (e) {
       console.warn('Home: Failed to load suggestions:', e.message);
@@ -269,10 +248,126 @@ export function renderHomePage(container) {
     }
   }
 
+  // Shared action handler (extracted so dismiss can re-register it)
+  function _handleAction(artist, action) {
+    switch (action) {
+      case 'playlist':
+        location.hash = '#/playlist';
+        setTimeout(() => {
+          const vibeInput = document.getElementById('vibe-input');
+          if (vibeInput) vibeInput.value = `Build a playlist around ${artist.name} — ${artist.reason}`;
+          document.getElementById('toggle-generator-btn')?.click();
+        }, 200);
+        break;
+
+      case 'compare':
+        if (typeof window !== 'undefined' && artist.spotifyId) {
+          window.dispatchEvent(new CustomEvent('tastegraph:inject-artists', {
+            detail: [artist.name],
+          }));
+          location.hash = '#/game';
+        }
+        break;
+
+      case 'dismiss': {
+        const cached = DataStore.getSuggestedArtistsCache() || [];
+        const updated = cached.filter(a => a.name !== artist.name);
+        DataStore.setSuggestedArtistsCache(updated);
+        renderSuggestionRow(suggestionContainer, updated, _handleAction);
+        // Re-wire refresh button after re-render
+        document.getElementById('refresh-suggestions-btn-loaded')
+          ?.addEventListener('click', () => _triggerRefresh());
+        break;
+      }
+    }
+  }
+
+  // Stale-while-revalidate refresh:
+  // Keep old row visible → spin the button → generate in background → crossfade when ready
+  let _refreshInProgress = false;
+  function _triggerRefresh() {
+    if (_refreshInProgress) return; // debounce
+    _refreshInProgress = true;
+
+    // Animate refresh button to show work is happening
+    const btn = document.getElementById('refresh-suggestions-btn-loaded')
+               || document.getElementById('refresh-suggestions-btn');
+    const btnSvg = btn?.querySelector('svg');
+    if (btn) {
+      btn.disabled = true;
+      btn.style.opacity = '0.6';
+      if (btnSvg) btnSvg.style.animation = 'spin 0.9s linear infinite';
+    }
+
+    // Build seed list — same logic as loadSuggestions (with Spotify fallback)
+    const eloRatings = DataStore.getEloRatings();
+    let topArtists = Object.entries(eloRatings)
+      .filter(([, d]) => d.name && d.rating > 1400)
+      .sort((a, b) => b[1].rating - a[1].rating)
+      .slice(0, 8)
+      .map(([id, d]) => ({ id, name: d.name, genres: d.genres || [] }));
+
+    if (topArtists.length < 3) {
+      try {
+        const spotifyCached = DataStore.getTopArtists();
+        if (spotifyCached && spotifyCached.length >= 3) {
+          topArtists = spotifyCached.slice(0, 8).map(a => ({
+            id: a.id, name: a.name, genres: a.genres || [],
+          }));
+        }
+      } catch (_) { /* not yet cached */ }
+    }
+
+    if (topArtists.length < 3) {
+      _refreshInProgress = false;
+      if (btn) { btn.disabled = false; btn.style.opacity = ''; if (btnSvg) btnSvg.style.animation = ''; }
+      return;
+    }
+
+    const agent = new SuggestedArtistsAgent();
+    agent.generate(topArtists, eloRatings, { force: true })
+      .then(suggestions => {
+        // Crossfade: fade out old row, swap, fade in
+        const scroll = suggestionContainer.querySelector('.suggestion-scroll');
+        if (scroll) {
+          scroll.style.transition = 'opacity 200ms ease';
+          scroll.style.opacity = '0';
+        }
+        setTimeout(() => {
+          renderSuggestionRow(suggestionContainer, suggestions, _handleAction);
+          // Re-wire the loaded refresh button after the DOM is replaced
+          document.getElementById('refresh-suggestions-btn-loaded')
+            ?.addEventListener('click', () => _triggerRefresh());
+          // Re-enable happens here, AFTER the DOM swap (not in finally which races)
+          _refreshInProgress = false;
+        }, 200);
+      })
+      .catch(err => {
+        console.warn('Refresh failed:', err.message);
+        _refreshInProgress = false;
+        // Restore button on error
+        const errBtn = document.getElementById('refresh-suggestions-btn-loaded')
+                      || document.getElementById('refresh-suggestions-btn');
+        if (errBtn) {
+          errBtn.disabled = false;
+          errBtn.style.opacity = '';
+          const svg = errBtn.querySelector('svg');
+          if (svg) svg.style.animation = '';
+        }
+      });
+  }
+
   // === Init ===
   renderGrid();
   renderStats();
-  loadSuggestions();
+
+  // Defer suggestions load — let the grid paint first so the page feels instant
+  const _loadSuggestionsDeferred = () => loadSuggestions();
+  if ('requestIdleCallback' in window) {
+    requestIdleCallback(_loadSuggestionsDeferred, { timeout: 1000 });
+  } else {
+    setTimeout(_loadSuggestionsDeferred, 300);
+  }
 
   // Listen for library updates (from scheduler)
   const libraryHandler = () => {

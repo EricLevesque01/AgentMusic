@@ -8,10 +8,11 @@
  */
 
 const STAGES = [
-  { id: 'profiler', label: 'Profile',  icon: '🧠', desc: 'Understanding your taste' },
-  { id: 'scout',    label: 'Scout',    icon: '🔍', desc: 'Finding candidates' },
-  { id: 'curator',  label: 'Curate',   icon: '🎵', desc: 'Building your playlist' },
-  { id: 'narrator', label: 'Explain',  icon: '✍️', desc: 'Writing the story' },
+  { id: 'profiler',  label: 'Profile',   icon: '🧠', desc: 'Understanding your taste' },
+  { id: 'cultural',  label: 'Research',  icon: '🌐', desc: 'Checking what\'s happening in music now' },
+  { id: 'scout',     label: 'Scout',     icon: '🔍', desc: 'Finding candidates' },
+  { id: 'curator',   label: 'Curate',   icon: '🎵', desc: 'Building your playlist' },
+  { id: 'narrator',  label: 'Explain',  icon: '✍️', desc: 'Writing the story' },
 ];
 
 /**
@@ -21,6 +22,18 @@ const STAGES = [
 function humanizeThought(raw) {
   // Only surface the high-level reasoning moments — skip everything else.
   // Goal: ~1 thought per pipeline stage, max.
+
+  // Sprint 5.3: CulturalScout web research results
+  if (/Cultural(Scout|Intel|Intelligence)/i.test(raw)) {
+    const cleaned = raw.replace(/^Cultural\w*:\s*/i, '');
+    return '🌐 ' + (cleaned.length > 80 ? cleaned.slice(0, 77) + '…' : cleaned);
+  }
+
+  // Sprint 5.3: Curator's Selection Thesis (arc/discovery ratio/exclusions)
+  if (/Selection Thesis|Curator.*[Tt]hesis|Arc:/i.test(raw)) {
+    const cleaned = raw.replace(/^.*[Tt]hesis[:\s]*/i, '');
+    return '🎯 ' + (cleaned.length > 90 ? cleaned.slice(0, 87) + '…' : cleaned);
+  }
 
   // Scout's LLM-generated strategy reasoning — this is the interesting one
   if (/Scout strategy/i.test(raw)) {
@@ -32,6 +45,12 @@ function humanizeThought(raw) {
   if (/Curator Reflection/i.test(raw)) {
     const cleaned = raw.replace(/^Curator Reflection:\s*/i, '');
     return cleaned.length > 90 ? cleaned.slice(0, 87) + '…' : cleaned;
+  }
+
+  // Sprint 5.3: Narrator background enrichment completion
+  if (/Narrator.*Enrich/i.test(raw)) {
+    const count = raw.match(/(\d+)/)?.[1];
+    return count ? `✨ Deep-dived ${count} discovery track${count !== '1' ? 's' : ''} with music-history context` : '✨ Discovery tracks enriched';
   }
 
   // Final result summary

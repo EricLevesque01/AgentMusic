@@ -266,10 +266,35 @@ export class DataStore {
    * @returns {string} playlist ID
    */
   static saveToLibrary(context, intent = '', source = 'manual') {
-    const serializable = JSON.parse(JSON.stringify(context, (key, value) => {
-      if (value instanceof Map) return Object.fromEntries(value);
-      return value;
-    }));
+    let serializable = {};
+    try {
+      const seen = new WeakSet();
+      serializable = JSON.parse(JSON.stringify(context, (key, value) => {
+        // Drop circular references
+        if (typeof value === 'object' && value !== null) {
+          if (seen.has(value)) return;
+          seen.add(value);
+        }
+        // Convert Maps to objects
+        if (value instanceof Map) return Object.fromEntries(value);
+        return value;
+      }));
+    } catch (err) {
+      console.warn('DataStore: Failed to deeply serialize context, falling back to shallow copy.', err);
+      serializable = {
+        sessionIntent: context.sessionIntent,
+        playlistName: context.playlistName,
+        curatorReflection: context.curatorReflection,
+        scoredPlaylist: context.scoredPlaylist,
+        explanations: {
+          playlistTitle: context.explanations?.playlistTitle,
+          playlistSummary: context.explanations?.playlistSummary,
+          trackExplanations: context.explanations?.trackExplanations instanceof Map 
+            ? Object.fromEntries(context.explanations.trackExplanations) 
+            : context.explanations?.trackExplanations
+        }
+      };
+    }
 
     const library = this.getPlaylistLibrary();
     const entry = {

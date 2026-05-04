@@ -372,7 +372,7 @@ export class ProfileView {
     const fSlice = rankedArtists.slice(cBound); // Remaining bottom %
 
     // Sample evenly across the slice to get truly representative artists for the UI row
-    const getRepresentative = (slice, count = 6) => {
+    const getRepresentative = (slice, count = 4) => {
       if (slice.length <= count) return slice;
       const step = slice.length / count;
       return Array.from({ length: count }, (_, i) => slice[Math.floor(i * step)]);

@@ -563,17 +563,11 @@ export class ProfileView {
       ctx.fillStyle = 'rgba(255,255,255,0.8)';
       ctx.font = '12px Inter, sans-serif';
       
-      // Dynamic alignment so text doesn't bleed off the edge of the canvas
-      if (Math.cos(angle) > 0.1) {
-        ctx.textAlign = 'left';
-      } else if (Math.cos(angle) < -0.1) {
-        ctx.textAlign = 'right';
-      } else {
-        ctx.textAlign = 'center';
-      }
-      
+      // Center alignment looks best for radar charts. 
+      // The widened 400px canvas prevents it from bleeding off the edges.
+      ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
-      const name = data[i].name.length > 16 ? data[i].name.slice(0, 15) + '…' : data[i].name;
+      const name = data[i].name.length > 18 ? data[i].name.slice(0, 17) + '…' : data[i].name;
       ctx.fillText(name, lx, ly);
     }
 

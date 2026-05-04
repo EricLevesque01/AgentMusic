@@ -245,13 +245,13 @@ export class PlaylistScheduler {
       if (hour >= 6 && hour < 10) {
         seeds.push({ intent: `Morning clarity — ${timeAnchor ? `the gentler side of ${timeAnchor} and ` : ''}acoustic warmth to ease into the day. No abrasive edges, just light and melody`, category: 'temporal' });
       } else if (hour >= 10 && hour < 14) {
-        seeds.push({ intent: `Focus mode — instrumental ${topGenres[0] || 'ambient'} that stays out of the way. Steady, rhythmic, engineered for concentration${timeAnchor ? `. Think ${timeAnchor} on their most restrained` : ''}`, category: 'temporal' });
+        seeds.push({ intent: `Focus mode — instrumental music that stays out of the way. Steady, rhythmic, engineered for concentration${timeAnchor ? `. Think ${timeAnchor} on their most restrained` : ''}`, category: 'temporal' });
       } else if (hour >= 14 && hour < 18) {
-        seeds.push({ intent: `Afternoon energy — the upbeat, rhythmic side of ${topGenres[0] || 'your favorites'}${timeAnchor ? `, starting from ${timeAnchor}` : ''}. Music that makes you want to move`, category: 'temporal' });
+        seeds.push({ intent: `Afternoon energy — the upbeat, rhythmic side of your taste${timeAnchor ? `, starting from ${timeAnchor}` : ''}. Music that makes you want to move`, category: 'temporal' });
       } else if (hour >= 18 && hour < 22) {
-        seeds.push({ intent: `Evening wind-down — ${timeAnchor ? `the warm, contemplative textures of ${timeAnchor} and ` : ''}rich ${topGenres[0] || 'atmospheric'} sounds for unwinding after dark`, category: 'temporal' });
+        seeds.push({ intent: `Evening wind-down — ${timeAnchor ? `the warm, contemplative textures of ${timeAnchor} and ` : ''}rich atmospheric sounds for unwinding after dark`, category: 'temporal' });
       } else {
-        seeds.push({ intent: `3am listening — nocturnal ${topGenres[0] || 'ambient'} for the insomniac hours${timeAnchor ? `. The shadowy corners of ${timeAnchor}'s sonic world` : ''}`, category: 'temporal' });
+        seeds.push({ intent: `3am listening — nocturnal ambient and atmospheric music for the insomniac hours${timeAnchor ? `. The shadowy corners of ${timeAnchor}'s sonic world` : ''}`, category: 'temporal' });
       }
 
       // Seed 5: Episodic callback — with session detail

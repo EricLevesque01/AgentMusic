@@ -135,7 +135,7 @@ export class ProfilerAgent {
     // Sort all artists by their live Elo ratings to establish true dynamic taste
     const allRanked = Object.values(eloRatings)
       .filter(a => a.name && a.name !== 'undefined')
-      .sort((a, b) => b.rating - a.rating);
+      .sort((a, b) => (b.rating - a.rating) || (a.name || '').localeCompare(b.name || ''));
     
     // Build highly actionable Taste Tiers for the LLM
     const tasteTiers = {
@@ -364,7 +364,7 @@ export class ProfilerAgent {
   getTopRankedArtists(n = 20) {
     const ratings = DataStore.getEloRatings();
     return Object.entries(ratings)
-      .sort((a, b) => b[1].rating - a[1].rating)
+      .sort((a, b) => (b[1].rating - a[1].rating) || (a[1].name || '').localeCompare(b[1].name || ''))
       .slice(0, n)
       .map(([id, data]) => ({ id, ...data }));
   }

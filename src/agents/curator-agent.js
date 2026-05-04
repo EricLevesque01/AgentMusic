@@ -81,7 +81,7 @@ export class CuratorAgent {
     if (/deep.?dive.*into|all\s+\w|only\s+\w|just\s+\w|discography|catalog|everything by|check.?out|listen to|try\s+\w|friend.*told|recommend|heard about|got.?into|playlist\s+for|playlist\s+of|playlist\s+by|\bartist\b|\bband\b/i.test(intent)) {
       params = {
         intentType: 'artist_focus',
-        targetTracks: '15-25 — use your judgment based on the artist\'s catalog depth',
+        targetTracks: '10-15 — use your judgment based on the artist\'s catalog depth',
         diversityNote: 'The user wants to hear THIS artist. The PRIMARY artist should absolutely dominate the playlist (up to 100% of tracks if appropriate). If the overall track count is low, just stick to the requested artist. Supporting artists are only context and should be sparse.',
         eraNote: 'Span the artist\'s career — include early, peak, and recent work if available.',
       };
@@ -91,7 +91,7 @@ export class CuratorAgent {
     else if (/explor|introduce|get.?into|new to|first time|haven.t listened|teach me|guide.*through/i.test(intent)) {
       params = {
         intentType: 'genre_exploration',
-        targetTracks: '18-30 — enough to give a real tour of the genre',
+        targetTracks: '12-18 — enough to give a real tour of the genre',
         diversityNote: 'Genre exploration demands MAXIMUM DIVERSITY. Mix it up completely. Every track should ideally be from a different artist to provide a broad survey of the style.',
         eraNote: 'Span multiple decades and sub-styles.',
       };
@@ -101,7 +101,7 @@ export class CuratorAgent {
     else if (/stud|work.?out|gym|driv|cook|relax|sleep|focus|chill|party|dinner|morning|night|run|jog|meditat/i.test(intent)) {
       params = {
         intentType: 'mood_activity',
-        targetTracks: '15-30 — choose a length that fits the mood (e.g. tight 15 for focus, 25+ for a party)',
+        targetTracks: '10-20 — choose a length that fits the mood (e.g. tight 10 for focus, 20 for a party)',
         diversityNote: 'Be highly intentional about clustering. If an artist perfectly captures the mood, include a "mini-dive" of 3-5 tracks from them rather than artificially jumping around. If the playlist is short, it\'s perfectly fine if it only features 2 or 3 artists total.',
         eraNote: 'Era is less important than mood cohesion.',
       };
@@ -111,7 +111,7 @@ export class CuratorAgent {
     else {
       params = {
         intentType: 'general',
-        targetTracks: '15-25 — choose whatever length feels right for the intent',
+        targetTracks: '10-15 — choose whatever length feels right for the intent',
         diversityNote: 'Balance familiarity with discovery. Do not artificially force diversity — if 3 or 4 tracks from a core artist anchor the vibe perfectly, group them together.',
         eraNote: 'No specific era constraints. Let the intent guide temporal choices.',
       };

@@ -969,25 +969,39 @@ export class TasteGame {
                 calibrateSearch.value = '';
                 calibrateSearch.placeholder = 'Loading...';
                 
-                // Fetch full artist data (searchArtist enriches with Last.fm tags)
-                const fullArtist = await searchArtist(artist.name);
-                if (fullArtist) {
-                  // Add to allArtists pool if not already present
-                  if (!this.allArtists.some(a => a.id === fullArtist.id)) {
-                    fullArtist.isConciergePick = true;
-                    this.allArtists.push(fullArtist);
+                // Use the artist directly from the dropdown — do NOT re-search by name.
+                // searchArtist(name) with limit:1 can return a DIFFERENT artist for less
+                // popular acts (e.g. "Geese" might resolve to a different Spotify entity).
+                const selectedArtist = artist; // already has id, name, images, genres from searchArtists()
+
+                // Best-effort enrichment with Last.fm tags (non-blocking)
+                try {
+                  const { getArtistTags } = await import('../../data/lastfm-api.js');
+                  const tags = await getArtistTags(selectedArtist.name);
+                  const validTags = tags.filter(t =>
+                    !t.name.includes('seen live') && !t.name.includes('under 2000 listeners')
+                  );
+                  if (validTags.length > 0) {
+                    selectedArtist.genres = validTags.slice(0, 3).map(t => t.name);
                   }
-
-                  // Push to injectedQueue so _selectStrategicPair uses them
-                  // with highest priority in the very next matchup
-                  this.injectedQueue.push(fullArtist);
-
-                  calibrateSearch.placeholder = 'Search artist…';
-                  this.nextRound();
-                } else {
-                  calibrateSearch.placeholder = 'Artist not found — try another name';
-                  setTimeout(() => { calibrateSearch.placeholder = 'Search artist…'; }, 2500);
+                  const { mapToMacroGenres } = await import('../../data/genre-taxonomy.js');
+                  selectedArtist.macroGenres = mapToMacroGenres(selectedArtist.genres || []);
+                } catch (e) {
+                  // Non-critical — genres stay as Spotify provided
                 }
+
+                // Add to allArtists pool if not already present
+                if (!this.allArtists.some(a => a.id === selectedArtist.id)) {
+                  selectedArtist.isConciergePick = true;
+                  this.allArtists.push(selectedArtist);
+                }
+
+                // Push to injectedQueue so _selectStrategicPair uses them
+                // with highest priority in the very next matchup
+                this.injectedQueue.push(selectedArtist);
+
+                calibrateSearch.placeholder = 'Search artist…';
+                this.nextRound();
               });
               
               calibrateDropdown.appendChild(li);

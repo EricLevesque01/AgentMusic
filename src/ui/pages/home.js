@@ -27,7 +27,7 @@ export function renderHomePage(container) {
           background-clip: text;
         ">Discover</h1>
         <p style="font-size: var(--font-size-sm); color: var(--text-muted);">
-          Playlists curated by your AI agents — powered by real music research.
+          An evolving feed of context-aware curation, generated specifically for your taste by your AI agents.
         </p>
       </header>
 
@@ -244,9 +244,6 @@ export function renderHomePage(container) {
           <div style="font-size: var(--font-size-2xl); font-weight: var(--font-weight-bold); color: var(--accent-green);">${playlistCount}</div>
           <div style="font-size: var(--font-size-xs); color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.08em;">Playlists Created</div>
         </div>
-        <div style="text-align: center;">
-          <div style="font-size: var(--font-size-2xl); font-weight: var(--font-weight-bold); color: var(--accent-violet);">${listenedCount}</div>
-          <div style="font-size: var(--font-size-xs); color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.08em;">Explored</div>
         </div>
       </div>
     `;

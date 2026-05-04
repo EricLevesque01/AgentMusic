@@ -447,10 +447,11 @@ Return ONLY valid JSON.`;
     // --- Post-selection verification: enforce hard constraints ---
     playlist = this._verifyPlaylist(playlist, params, onThought);
 
-    // --- Enforce minimum playlist length ---
-    // If the LLM returned fewer tracks than the minimum, pad from the clean pool
-    const minTracks = parseInt(params.targetTracks.match(/\d+/)?.[0]) || 12;
-    if (playlist.length < minTracks) {
+    // --- Enforce minimum playable length ---
+    // We trust the LLM's judgment on length (e.g. returning 10 tight tracks instead of padding to 15),
+    // but we need a hard floor so the playlist isn't completely empty.
+    const hardFloor = 6;
+    if (playlist.length < hardFloor) {
       const usedIds = new Set(playlist.map(c => c.track.id));
       const artistCounts = {};
       for (const c of playlist) {
@@ -458,16 +459,16 @@ Return ONLY valid JSON.`;
       }
       // Pull from clean pool, respecting per-artist cap
       for (const c of cleanPool) {
-        if (playlist.length >= minTracks) break;
+        if (playlist.length >= hardFloor) break;
         if (usedIds.has(c.track.id)) continue;
         const count = artistCounts[c.artistName] || 0;
         if (count >= params.maxPerArtistNum) continue;
-        playlist.push({ ...c, dominantFactor: c.dominantFactor || 'Added to reach target playlist length.' });
+        playlist.push({ ...c, dominantFactor: c.dominantFactor || 'Added to reach minimum playable length.' });
         usedIds.add(c.track.id);
         artistCounts[c.artistName] = count + 1;
       }
       if (onThought && playlist.length > selectedIds.length) {
-        onThought(`Curator: Padded playlist from ${selectedIds.length} → ${playlist.length} tracks to meet minimum`);
+        onThought(`Curator: Padded playlist from ${selectedIds.length} → ${playlist.length} tracks to meet hard floor`);
       }
     }
 

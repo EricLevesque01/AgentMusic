@@ -217,13 +217,25 @@ export class DataStore {
   }
 
   static saveGeneratedPlaylist(context) {
-    // Deep-clone context and convert Map → plain object for JSON serialization
-    const serializable = JSON.parse(JSON.stringify(context, (key, value) => {
-      if (value instanceof Map) {
-        return Object.fromEntries(value);
-      }
-      return value;
-    }));
+    let serializable = {};
+    try {
+      const seen = new WeakSet();
+      // Deep-clone context and convert Map → plain object for JSON serialization
+      serializable = JSON.parse(JSON.stringify(context, (key, value) => {
+        // Drop circular references
+        if (typeof value === 'object' && value !== null) {
+          if (seen.has(value)) return;
+          seen.add(value);
+        }
+        if (value instanceof Map) {
+          return Object.fromEntries(value);
+        }
+        return value;
+      }));
+    } catch (err) {
+      console.warn('DataStore: Failed to serialize context for legacy save.', err);
+      return; // Skip saving to legacy if it fails, playlist_library already succeeded
+    }
 
     const playlists = this.getSavedPlaylists();
     const newPlaylist = {

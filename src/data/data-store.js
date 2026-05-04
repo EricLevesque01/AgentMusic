@@ -216,25 +216,30 @@ export class DataStore {
     }
   }
 
+  static _serializeContext(context) {
+    return {
+      sessionIntent: context.sessionIntent,
+      playlistName: context.playlistName,
+      curatorReflection: context.curatorReflection,
+      scoredPlaylist: context.scoredPlaylist,
+      blackboard: context.blackboard,
+      explanations: {
+        playlistTitle: context.explanations?.playlistTitle,
+        playlistSummary: context.explanations?.playlistSummary,
+        trackExplanations: context.explanations?.trackExplanations instanceof Map 
+          ? Object.fromEntries(context.explanations.trackExplanations) 
+          : context.explanations?.trackExplanations
+      }
+    };
+  }
+
   static saveGeneratedPlaylist(context) {
-    let serializable = {};
+    let serializable;
     try {
-      const seen = new WeakSet();
-      // Deep-clone context and convert Map → plain object for JSON serialization
-      serializable = JSON.parse(JSON.stringify(context, (key, value) => {
-        // Drop circular references
-        if (typeof value === 'object' && value !== null) {
-          if (seen.has(value)) return;
-          seen.add(value);
-        }
-        if (value instanceof Map) {
-          return Object.fromEntries(value);
-        }
-        return value;
-      }));
+      serializable = this._serializeContext(context);
     } catch (err) {
       console.warn('DataStore: Failed to serialize context for legacy save.', err);
-      return; // Skip saving to legacy if it fails, playlist_library already succeeded
+      return;
     }
 
     const playlists = this.getSavedPlaylists();
@@ -278,34 +283,12 @@ export class DataStore {
    * @returns {string} playlist ID
    */
   static saveToLibrary(context, intent = '', source = 'manual') {
-    let serializable = {};
+    let serializable;
     try {
-      const seen = new WeakSet();
-      serializable = JSON.parse(JSON.stringify(context, (key, value) => {
-        // Drop circular references
-        if (typeof value === 'object' && value !== null) {
-          if (seen.has(value)) return;
-          seen.add(value);
-        }
-        // Convert Maps to objects
-        if (value instanceof Map) return Object.fromEntries(value);
-        return value;
-      }));
+      serializable = this._serializeContext(context);
     } catch (err) {
-      console.warn('DataStore: Failed to deeply serialize context, falling back to shallow copy.', err);
-      serializable = {
-        sessionIntent: context.sessionIntent,
-        playlistName: context.playlistName,
-        curatorReflection: context.curatorReflection,
-        scoredPlaylist: context.scoredPlaylist,
-        explanations: {
-          playlistTitle: context.explanations?.playlistTitle,
-          playlistSummary: context.explanations?.playlistSummary,
-          trackExplanations: context.explanations?.trackExplanations instanceof Map 
-            ? Object.fromEntries(context.explanations.trackExplanations) 
-            : context.explanations?.trackExplanations
-        }
-      };
+      console.warn('DataStore: Failed to serialize context.', err);
+      serializable = {};
     }
 
     const library = this.getPlaylistLibrary();

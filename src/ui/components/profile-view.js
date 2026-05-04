@@ -523,7 +523,7 @@ export class ProfileView {
     const ctx = canvas.getContext('2d');
     const W = canvas.width, H = canvas.height;
     const cx = W / 2, cy = H / 2;
-    const maxR = Math.min(cx, cy) - 40;
+    const maxR = Math.min(cx, cy) - 50;
     const n = Math.min(genreDistribution.length, 8);
     const data = genreDistribution.slice(0, n);
     const angleStep = (Math.PI * 2) / n;
@@ -557,11 +557,20 @@ export class ProfileView {
       const labelR = maxR + 20;
       const lx = cx + Math.cos(angle) * labelR;
       const ly = cy + Math.sin(angle) * labelR;
-      ctx.fillStyle = 'rgba(255,255,255,0.6)';
-      ctx.font = '11px Inter, sans-serif';
-      ctx.textAlign = 'center';
+      ctx.fillStyle = 'rgba(255,255,255,0.8)';
+      ctx.font = '12px Inter, sans-serif';
+      
+      // Dynamic alignment so text doesn't bleed off the edge of the canvas
+      if (Math.cos(angle) > 0.1) {
+        ctx.textAlign = 'left';
+      } else if (Math.cos(angle) < -0.1) {
+        ctx.textAlign = 'right';
+      } else {
+        ctx.textAlign = 'center';
+      }
+      
       ctx.textBaseline = 'middle';
-      const name = data[i].name.length > 12 ? data[i].name.slice(0, 11) + '…' : data[i].name;
+      const name = data[i].name.length > 16 ? data[i].name.slice(0, 15) + '…' : data[i].name;
       ctx.fillText(name, lx, ly);
     }
 

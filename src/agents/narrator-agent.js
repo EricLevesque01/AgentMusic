@@ -52,7 +52,7 @@ Return a JSON object analyzing the user's taste with exactly these four keys:
 1. "tagline": A punchy, 3-5 word capitalized tagline for their music taste. Use musical and cultural vocabulary — genre descriptors, scene references, artist archetypes, era markers. Avoid loaded emotional or suggestive adjectives. Examples of good taglines: "Post-Punk Classicist", "Indie Folk Archivist", "Art Rock True Believer", "Guitar-Driven Deep Diver".
 2. "heroDescription": A 1-2 sentence warm, celebratory summary of their top artist and overall vibe — enthusiastic, never ironic or edgy.
 3. "vibeAnalysis": 1 concise paragraph (max 4 sentences) analyzing their taste based on the dossier.
-4. "dynamicTiers": An object with keys "S", "A", "B", "C", "F" mapping to arrays of string artist names. Choose up to 4 highly representative artists per tier from the User Dossier lists above. You are curating the "face" of each tier for the UI. Pick artists that distinctly represent the sonic spread of that tier.
+4. "dynamicTiers": An object with keys "S", "A", "B", "C", "F" mapping to arrays of string artist names drawn ONLY from the User Dossier. Choose a highly dynamic, varying number of artists per tier that truly fit. For example, your S-Tier might only have 1 or 2 absolute favorites, while your B-Tier might have 5 or 6 exploring artists. Do not artificially fill 4 slots per tier — make it asymmetrical and realistic.
 
 CRITICAL RULES for vibeAnalysis:
 1. TONE: Warm, enthusiastic, and celebratory. Speak directly to them using "you". Be genuinely appreciative of their taste. Keep the register accessible and age-appropriate — avoid edgy, dark, or suggestive framings even if the music itself is melancholic.

@@ -167,11 +167,8 @@ export async function getTopTracks(artistId, artistName, limit = 10) {
   // 4. Last.fm fallback: get track names → resolve via Spotify search
   const fallbackTracks = await _lastfmFallback(artistId, artistName, limit);
 
-  // 5. Ultimate fallback: if even Last.fm→Spotify search failed, build
-  //    minimal tracks from Last.fm data alone (no Spotify resolution).
-  if (fallbackTracks.length === 0 && artistName) {
-    return _lastfmOnlyFallback(artistId, artistName, limit);
-  }
+  // 5. Ultimate fallback: if even Last.fm→Spotify search failed, we don't return unplayable tracks.
+  // We just return whatever we could successfully resolve.
   return fallbackTracks;
 }
 
@@ -191,8 +188,7 @@ async function _lastfmFallback(artistId, artistName, limit) {
     // Process in small batches to be gentle on Spotify search
     for (const lfTrack of lastfmTracks.slice(0, limit)) {
       if (isSpotifyDegraded()) {
-        resolved.push(_buildMinimalTrack(lfTrack, artistId));
-        continue;
+        continue; // Skip trying to search if we know Spotify is down
       }
       try {
         const spotifyTrack = await searchTrack(lfTrack.name, lfTrack.artistName);
@@ -202,9 +198,6 @@ async function _lastfmFallback(artistId, artistName, limit) {
       } catch (err) {
         if (err.message?.includes('429')) {
           _markSpotifyDegraded();
-          // If even search is rate-limited, build a minimal track shape
-          // so the pipeline can still see the candidate (just not playable)
-          resolved.push(_buildMinimalTrack(lfTrack, artistId));
         }
         // Otherwise silently skip this track
       }
@@ -227,42 +220,7 @@ async function _lastfmFallback(artistId, artistName, limit) {
   }
 }
 
-/**
- * Build a minimal Spotify-shaped track object from Last.fm data.
- * Used as a last resort when both Spotify top-tracks AND search are down.
- * These tracks won't be playable but will carry enough metadata for
- * the Curator to make selection decisions.
- */
-function _buildMinimalTrack(lastfmTrack, artistId) {
-  return {
-    id: `lastfm_${lastfmTrack.artistName}_${lastfmTrack.name}`.replace(/\s+/g, '_').toLowerCase(),
-    name: lastfmTrack.name,
-    artists: [{ id: artistId, name: lastfmTrack.artistName }],
-    album: { name: 'Unknown Album', images: [] },
-    duration_ms: 0,
-    popularity: Math.min(100, Math.round(lastfmTrack.listeners / 1000)),
-    preview_url: null,
-    external_urls: {},
-    _source: 'lastfm_fallback', // Flag so the UI can handle gracefully
-  };
-}
 
-/**
- * Pure Last.fm fallback: gets track names and builds minimal track objects
- * WITHOUT any Spotify calls. Used when Spotify is completely unavailable.
- */
-async function _lastfmOnlyFallback(artistId, artistName, limit) {
-  try {
-    const lastfmTracks = await getArtistTopTracksLastfm(artistName, limit);
-    if (!lastfmTracks || lastfmTracks.length === 0) return [];
-    const tracks = lastfmTracks.map(t => _buildMinimalTrack(t, artistId));
-    const cacheKey = `${artistId}_${limit}`;
-    _topTracksCache.set(cacheKey, tracks);
-    return tracks;
-  } catch {
-    return [];
-  }
-}
 
 // ════════════════════════════════════════════════════════════════
 // Intent-Aware Retrieval (Agentic Modes)
@@ -290,15 +248,7 @@ export async function resolveSpecificTracks(trackRequests) {
     }
 
     if (isSpotifyDegraded()) {
-      resolved.push({
-        id: `lastfm_${req.artistName}_${req.trackName}`.replace(/\s+/g, '_').toLowerCase(),
-        name: req.trackName,
-        artists: [{ name: req.artistName }],
-        album: { name: 'Unknown Album', images: [] },
-        popularity: 50,
-        _source: 'lastfm_fallback'
-      });
-      continue;
+      continue; // Skip hitting the API
     }
 
     try {

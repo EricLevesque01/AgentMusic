@@ -218,6 +218,7 @@ export function renderPlaylistPage(container) {
       
       // Save it to library (populates both playlist_library and legacy saved_playlists)
       DataStore.saveToLibrary(context, vibe, 'manual');
+      window.dispatchEvent(new CustomEvent('tastegraph:playlist-updated'));
       
       playlistView.render(context);
       generatorSection.style.display = 'none';

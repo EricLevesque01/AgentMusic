@@ -73,8 +73,6 @@ export class DataStore {
 
   static setEloRatings(ratings) {
     this.save('elo_ratings', ratings);
-    // Invalidate the profiler cache so the UI reflects new rankings immediately
-    this.clear('taste_state_cache');
   }
 
   // --- Core User Metadata ---

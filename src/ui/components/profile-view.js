@@ -312,8 +312,8 @@ export class ProfileView {
       applyProfile(cached.profile);
       if (el) el.style.opacity = '1';
 
-      // Check if stale (> 30 min or artist lineup changed)
-      const isStale = Date.now() - (cached.generatedAt || 0) > 30 * 60 * 1000;
+      // Check if stale (> 30 min, artist lineup changed, or missing dynamic tiers from older cache)
+      const isStale = Date.now() - (cached.generatedAt || 0) > 30 * 60 * 1000 || !cached.profile?.dynamicTiers;
       const artistsChanged = cached.artistHash !== currentHash;
 
       if (isStale || artistsChanged) {

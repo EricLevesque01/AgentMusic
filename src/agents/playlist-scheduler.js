@@ -182,7 +182,8 @@ export class PlaylistScheduler {
       const dims = tier1?.tasteProfile?.musicDimensions;
       if (dims && dims._confidence > 0) {
         const sorted = Object.entries(dims)
-          .filter(([k]) => k !== '_confidence')
+          .filter(([k]) => !k.startsWith('_'))  // filter ALL private/metadata keys
+          .filter(([, v]) => typeof v === 'number')
           .sort((a, b) => b[1] - a[1]);
         const topDim = sorted[0];
         if (topDim && topNames.length > 0) {
@@ -193,10 +194,16 @@ export class PlaylistScheduler {
             intense: `Raw energy and catharsis — the distorted, emotional edge of ${topNames[0]} and the heavier corner of your ${topGenres[0] || 'rock'} world`,
             contemporary: `Cutting-edge production and fresh sonics — artists pushing ${topGenres[0] || 'electronic'} forward the way ${topNames[0]} redefined their lane`,
           };
-          seeds.push({
-            intent: dimTemplates[topDim[0]] || `The ${topDim[0]} dimension of your taste — artists like ${topNames.join(' and ')}`,
-            category: 'dimension',
-          });
+          const intent = dimTemplates[topDim[0]];
+          // Only push if we have a real template — never let raw key names leak into intents
+          if (intent) {
+            seeds.push({ intent, category: 'dimension' });
+          } else if (topNames.length > 0) {
+            seeds.push({
+              intent: `A curated mix built around ${topNames.slice(0, 2).join(' and ')} — deep cuts, adjacent artists, and hidden gems from their sonic world`,
+              category: 'dimension',
+            });
+          }
         }
       }
 

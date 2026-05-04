@@ -343,7 +343,12 @@ Return a single JSON object:
   ]
 }
 
-AIM FOR THE UPPER END of the target track range. A 15-track playlist is significantly better than a 10-track one — more tracks = more value. Only go below the minimum if the pool genuinely doesn't have enough quality tracks.
+TRACK COUNT GUIDANCE — USE JUDGMENT:
+The target range is ${params.targetTracks}. Choose the right length for the intent:
+- Deep dives, artist focus, or rich exploratory intents → lean toward the upper end (more is better)
+- Focused mood/vibe sessions or specific genre cuts → a tighter 10-12 track playlist can be more powerful than a padded 18-track one
+- If the pool has 20+ high-quality tracks that all fit, use them. If the pool thins out below your standard after 12 tracks, stop there.
+- NEVER pad with mediocre tracks to hit a number. Quality over quantity.
 ${params.intentType === 'artist_focus' ? `
 ARTIST FOCUS HARD RULE: Count your tracks before finalizing:
 - Primary requested artist: use as many tracks as the pool contains (target 10-15)

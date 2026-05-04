@@ -88,13 +88,13 @@ function showActionModal(artist, onAction) {
       <p style="color: var(--text-secondary); font-size: var(--font-size-sm); margin-bottom: var(--space-5);">${artist.reason}</p>
       <div style="display: flex; flex-direction: column; gap: var(--space-3);">
         <button class="btn btn-primary" data-action="playlist" style="width: 100%;">
-          🎵 Build a playlist around ${artist.name}
+          Build a playlist around ${artist.name}
         </button>
         <button class="btn btn-secondary" data-action="compare" style="width: 100%;">
-          ⚖️ Add to Compare
+          Compare with other artists
         </button>
         <button class="btn btn-ghost" data-action="dismiss" style="width: 100%;">
-          ✕ Not interested
+          Not interested
         </button>
       </div>
     </div>

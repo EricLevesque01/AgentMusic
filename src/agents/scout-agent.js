@@ -398,31 +398,26 @@ export class ScoutAgent {
     if (!sessionIntent || sessionIntent.trim() === '') return;
 
     if (onThought) onThought(`Scout: Analyzing semantic intent: "${sessionIntent}"`);
-    const topGenres = tasteState.topGenres || [];
-    const topArtistNames = (tasteState.topRankedArtists || []).slice(0, 5).map(a => a.name);
 
     // Step 1: Ask the LLM for a structured retrieval plan.
-    // For exploration requests, DON'T feed the user's library — it biases the LLM
-    // toward "jazz-adjacent versions of your favorites" instead of actual jazz masters.
+    // Use the full Taste DNA Brief (built by Orchestrator after Profiler) instead of
+    // ad-hoc "top genres / top artists" lists. This gives the LLM a rich narrative
+    // understanding: north star artist, core identity, momentum, sophistication, etc.
     const intentType = this._classifyIntentType(sessionIntent);
     const isExploration = intentType === 'exploration';
 
-    let tasteContext = '';
+    // Import and format the taste brief
+    let tasteBriefText = '';
     try {
-      const tier1 = context?.tier1 || UserModel.loadTier1();
-      const dims = tier1?.tasteProfile?.musicDimensions;
-      if (dims && dims._confidence > 0) {
-        const sorted = Object.entries(dims)
-          .filter(([k]) => k !== '_confidence')
-          .sort((a, b) => b[1] - a[1]);
-        tasteContext = `\nUser's MUSIC personality: ${sorted.map(([k, v]) => `${k}: ${(v * 100).toFixed(0)}%`).join(', ')}`;
-      }
+      const { formatTasteBriefForPrompt } = await import('./taste-brief.js');
+      tasteBriefText = formatTasteBriefForPrompt(context?.tasteBrief);
     } catch (e) {}
 
-    // Build the user context block — omit library artists for exploration intents
+    // For exploration intents, include the brief as background but tell the LLM
+    // to search independently — don't constrain to the user's existing library.
     const userContextBlock = isExploration
-      ? `${tasteContext}\n\nIMPORTANT: The user is asking to EXPLORE genres they don't know well. Do NOT recommend artists from their existing library. Instead, use your own musical knowledge to find canonical, essential artists in the requested genres. Think like a record store clerk recommending the real deal, not approximations.`
-      : `User's top genres: ${topGenres.join(', ')}\nUser's top artists: ${topArtistNames.join(', ')}${tasteContext}`;
+      ? `${tasteBriefText ? tasteBriefText + '\n\n' : ''}IMPORTANT: The user is asking to EXPLORE genres they don't know well. Do NOT recommend artists from their existing library or taste profile above. Use it only to understand their sophistication level and what they already know. Instead, use your own deep musical knowledge to find canonical, essential artists in the requested genres. Think like a record store clerk recommending the real deal, not approximations.`
+      : (tasteBriefText || `User's top genres: ${(tasteState.topGenres || []).join(', ')}\nUser's top artists: ${(tasteState.topRankedArtists || []).slice(0, 5).map(a => a.name).join(', ')}`);
 
     const prompt = `${buildSoulPrefix()}
 
@@ -433,7 +428,6 @@ You are the Scout — a music discovery agent. Given the session intent, decide:
 
 Session intent: "${sessionIntent}"
 ${userContextBlock}
-${(() => { const mems = context?.agentMemories || []; return mems.length > 0 ? `\nPERMANENT USER NOTES:\n${mems.map(m => '- ' + m).join('\n')}` : ''; })()}
 
 Think about what kind of request this is and adapt your retrieval strategy.
 You have THREE ways to find tracks — use whichever combination best serves the intent:

@@ -103,7 +103,10 @@ export class ProfileView {
     const rankedArtists = Object.entries(eloRatings)
       .map(([id, data]) => ({ id, ...data }))
       .filter(a => a.name && a.name !== 'undefined' && a.id !== 'undefined')
-      .sort((a, b) => b.rating - a.rating);
+      .sort((a, b) => {
+        if (b.rating !== a.rating) return b.rating - a.rating;
+        return a.name.localeCompare(b.name);
+      });
 
     if (rankedArtists.length === 0) {
       // Bootstrap: show Spotify top artists so the profile isn't empty on first visit

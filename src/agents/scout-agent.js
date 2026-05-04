@@ -336,6 +336,7 @@ You have THREE ways to find tracks — use whichever combination best serves the
 3. **searchQueries** — Spotify search queries for intent-filtered discovery. Use field filters like artist:"Name" plus mood/theme keywords. Example: 'artist:"Miles Davis" ballad', 'genre:shoegaze dreamy'.
 
 When to use each:
+- **Scene/geographic** ("Connecticut indie scene", "local NYC punk bands", "UK post-punk"): Use 'artists' with 10-15 bands that represent that sound/region/era from your training knowledge. If you can't name hyper-local acts, use well-known acts from that genre and region as a proxy. Also use 'searchQueries' like 'genre:indie rock northeast' to cast a wider net.
 - **Genre exploration** ("explore jazz"): Use 'artists' with 10-15 canonical names spanning eras.
 - **Artist focus** ("check out Geese"): Use 'artists' with the target first + related artists. Consider adding 'specificTracks' if you know standout tracks.
 - **Mood/theme** ("Beatles love songs", "late night drive"): PREFER 'specificTracks' and 'searchQueries' — top tracks are too generic for mood-specific requests. Name the exact songs that fit the mood.

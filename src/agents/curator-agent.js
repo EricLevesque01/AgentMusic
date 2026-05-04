@@ -421,7 +421,7 @@ Return ONLY valid JSON.`;
       if (parsed.playlistSummary) {
         playlistSummary = parsed.playlistSummary;
       }
-      const tracksArray = parsed.playlist || parsed;
+      const tracksArray = parsed.playlist || parsed.tracks || parsed.items || parsed.songs || (Array.isArray(parsed) ? parsed : []);
       selectedIds = tracksArray.map(p => p.id);
       tracksArray.forEach(p => { reasonsMap[p.id] = p.reason; });
 
@@ -445,7 +445,7 @@ Return ONLY valid JSON.`;
         if (parsed.playlistSummary) {
           playlistSummary = parsed.playlistSummary;
         }
-        const tracksArray = parsed.playlist || parsed;
+        const tracksArray = parsed.playlist || parsed.tracks || parsed.items || parsed.songs || (Array.isArray(parsed) ? parsed : []);
         selectedIds = tracksArray.map(p => p.id);
         tracksArray.forEach(p => { reasonsMap[p.id] = p.reason; });
 

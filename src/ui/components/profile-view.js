@@ -320,6 +320,14 @@ export class ProfileView {
       const artistsChanged = cached.artistHash !== currentHash;
 
       if (isStale || artistsChanged) {
+        console.warn('Profile cache invalidated! Triggering LLM regeneration.', {
+          isStale,
+          artistsChanged,
+          cachedHash: cached.artistHash,
+          currentHash,
+          hasDynamicTiers: !!cached.profile?.dynamicTiers,
+          timeSinceGen: Date.now() - (cached.generatedAt || 0)
+        });
         const narrator = new NarratorAgent();
         narrator.generateAgenticProfile(tasteState).then(profile => {
           if (profile) {

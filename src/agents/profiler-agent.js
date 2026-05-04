@@ -92,8 +92,21 @@ export class ProfilerAgent {
         addArtists(followedArtists); // Explicitly followed
         addArtists(recentArtists);   // Just played today
         
-        artists = Array.from(artistMap.values());
-        tracks = mediumTracks;
+        const stripHeavyMetadata = (obj) => {
+          if (!obj) return obj;
+          const clone = { ...obj };
+          if (clone.available_markets) delete clone.available_markets;
+          if (clone.album) {
+            clone.album = { ...clone.album };
+            if (clone.album.available_markets) delete clone.album.available_markets;
+          }
+          if (clone.followers) delete clone.followers;
+          if (clone.external_urls) delete clone.external_urls;
+          return clone;
+        };
+
+        artists = Array.from(artistMap.values()).map(stripHeavyMetadata);
+        tracks = mediumTracks ? mediumTracks.map(stripHeavyMetadata) : [];
 
         DataStore.setTopArtists(artists);
         DataStore.setTopTracks(tracks);

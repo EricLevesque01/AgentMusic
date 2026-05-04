@@ -18,7 +18,19 @@ export class DataStore {
     try {
       localStorage.setItem(PREFIX + key, JSON.stringify(entry));
     } catch (e) {
-      console.warn(`DataStore: Failed to save "${key}"`, e);
+      if (e.name === 'QuotaExceededError' || e.message.includes('quota')) {
+        console.warn(`DataStore: QuotaExceededError. Purging heavy Spotify cache to make room...`);
+        localStorage.removeItem(PREFIX + 'top_artists');
+        localStorage.removeItem(PREFIX + 'top_tracks');
+        try {
+          // Retry the save after purging
+          localStorage.setItem(PREFIX + key, JSON.stringify(entry));
+        } catch (retryError) {
+          console.warn(`DataStore: Failed to save "${key}" even after purge.`, retryError);
+        }
+      } else {
+        console.warn(`DataStore: Failed to save "${key}"`, e);
+      }
     }
   }
 

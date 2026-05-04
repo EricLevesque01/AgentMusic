@@ -567,7 +567,7 @@ export class ProfileView {
       // The widened 400px canvas prevents it from bleeding off the edges.
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
-      const name = data[i].name.length > 18 ? data[i].name.slice(0, 17) + '…' : data[i].name;
+      const name = data[i].name.length > 25 ? data[i].name.slice(0, 24) + '…' : data[i].name;
       ctx.fillText(name, lx, ly);
     }
 

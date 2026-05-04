@@ -63,7 +63,7 @@ export class CuratorAgent {
     const intent = (sessionIntent || '').toLowerCase();
 
     // Artist focus: "deep dive into Miles Davis", "check out Geese", "my friend told me to listen to X"
-    if (/deep.?dive.*into|all\s+\w|only\s+\w|just\s+\w|discography|catalog|everything by|check.?out|listen to|try\s+\w|friend.*told|recommend|heard about|got.?into/i.test(intent)) {
+    if (/deep.?dive.*into|all\s+\w|only\s+\w|just\s+\w|discography|catalog|everything by|check.?out|listen to|try\s+\w|friend.*told|recommend|heard about|got.?into|playlist\s+for|playlist\s+of|playlist\s+by|\bartist\b|\bband\b/i.test(intent)) {
       return {
         intentType: 'artist_focus',
         targetTracks: '10-20 — use your judgment based on the artist\'s catalog depth',
@@ -219,7 +219,7 @@ export class CuratorAgent {
         parts.push(`- Source breakdown: ${sources}`);
       }
       if (s.usedAgenticRetrieval) {
-        parts.push(`- ⚡ EXPLICIT USER REQUEST IN POOL: Tracks with source "llm_primary_artist", "llm_specific", or "intent_search" are the EXACT targets of the session intent. You MUST include these tracks. Prioritize them above all algorithmically-chosen candidates.`);
+        parts.push(`- ⚡ EXPLICIT USER REQUEST IN POOL: Tracks with source "llm_primary_artist", "intent_override", "llm_specific", or "intent_search" are the EXACT targets of the session intent. You MUST include these tracks. Prioritize them above all algorithmically-chosen candidates.`);
       }
       if (s.intentOverrideActive) {
         intentOverrideConstraint = `\n⚠ CRITICAL CONSTRAINT: The user made a SPECIFIC REQUEST. Honor it unconditionally.\n- Do NOT replace the requested artist/tracks with familiar S-Tier artists.\n- Familiar favorites belong in a SUPPORTING role only — max 30% of the playlist.\n- If you see tracks from the requested artist in the pool, they MUST appear.\n- Filling the playlist with existing favorites when they asked for something new is a failure.\n`;

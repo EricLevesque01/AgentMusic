@@ -40,7 +40,7 @@ export class ScoutAgent {
   _classifyIntentType(intent) {
     const text = (intent || '').toLowerCase();
     // Specific artist/track request — user named something they want to hear
-    if (/check.?out|listen to|heard about|friend.*told|try\s+\w|got.?into|looking for|want to hear|play me|show me|find me|introduce me to\s+\w|give me some|just\s+\w|only\s+\w|\bcheck\b|\btry\b/.test(text)) return 'specific';
+    if (/check.?out|listen to|heard about|friend.*told|try\s+\w|got.?into|looking for|want to hear|play me|show me|find me|introduce me to\s+\w|give me some|just\s+\w|only\s+\w|\bcheck\b|\btry\b|playlist\s+for|playlist\s+of|playlist\s+by|\bartist\b|\bband\b/i.test(text)) return 'specific';
     // Broad requests — use full graph traversal with seed artists
     if (/familiar|favorites|my usual|top artists|what i know|same as always|my go-to|nothing new/.test(text)) return 'broad';
     // Exploration — deep hop traversal requested
@@ -207,7 +207,7 @@ export class ScoutAgent {
         riskyBets: [...new Set(hop2Artists)].slice(0, 5),
         gaps: (context.coverageGaps || []).map(g => g.genre),
         sourceBreakdown,
-        usedAgenticRetrieval: (sourceBreakdown['llm_specific'] || 0) + (sourceBreakdown['intent_search'] || 0) + (sourceBreakdown['llm_primary_artist'] || 0) > 0,
+        usedAgenticRetrieval: (sourceBreakdown['llm_specific'] || 0) + (sourceBreakdown['intent_search'] || 0) + (sourceBreakdown['llm_primary_artist'] || 0) + (sourceBreakdown['intent_override'] || 0) > 0,
         intentOverrideActive,
         spotifyDegraded: isSpotifyDegraded(),
       };
@@ -504,7 +504,7 @@ You MUST call the 'submit_retrieval_plan' tool.`;
                   track,
                   artistName: artist.name,
                   artistId: artist.id,
-                  source: 'intent_override',
+                  source: artistIndex === 0 ? 'llm_primary_artist' : 'intent_override',
                   hopDistance: 0,
                   eloScore: artistIndex === 0 ? 2000 : 1800,
                   tags: [],

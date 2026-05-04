@@ -101,8 +101,11 @@ export class ScoutAgent {
     let intentOverrideActive = isSpecificRequest; // pre-set from synchronous classifier
     if (sessionIntent) {
       await this._addIntentOverrideTracks(sessionIntent, tasteState, candidatePool, seenTrackIds, context, onThought);
-      // Also activate if the LLM produced a meaningful pool, even for 'general' intents
-      if (candidatePool.length >= 5) {
+      // For ANY non-general intent, if the LLM produced even 1 track, suppress seed
+      // expansion. The old threshold (>= 5) caused genre exploration requests like
+      // "jazz, soul, bossa nova deep cuts" to get flooded by seed-expansion artists
+      // (Geese, Erykah Badu) that had nothing to do with the intent.
+      if (candidatePool.length > 0 && intentType !== 'general') {
         intentOverrideActive = true;
       }
     }

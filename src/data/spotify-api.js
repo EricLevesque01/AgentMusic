@@ -6,66 +6,61 @@ import { getValidAccessToken, refreshAccessToken } from '../auth/spotify-auth.js
 
 const BASE_URL = 'https://api.spotify.com/v1';
 
-// Simple throttle — min 100ms between Spotify requests to avoid rate limiting
-let _lastRequestTime = 0;
-const MIN_REQUEST_INTERVAL_MS = 100;
+// Strict request queue to prevent concurrent blasts that trigger 429s
+let _requestQueue = Promise.resolve();
+const MIN_REQUEST_INTERVAL_MS = 100; // Max 10 requests per second
 
 /**
  * Make an authenticated request to the Spotify API.
  * Automatically refreshes the token on 401.
  * Retries with backoff on 429 (rate limit).
+ * Guarantees strict sequential execution via a Promise queue.
  */
 async function spotifyFetch(endpoint, options = {}) {
-  // Throttle: ensure minimum interval between requests
-  const now = Date.now();
-  const wait = MIN_REQUEST_INTERVAL_MS - (now - _lastRequestTime);
-  if (wait > 0) await new Promise(r => setTimeout(r, wait));
-  _lastRequestTime = Date.now();
+  return new Promise((resolve, reject) => {
+    _requestQueue = _requestQueue.then(async () => {
+      try {
+        let token = await getValidAccessToken();
+        if (!token) throw new Error('Not authenticated with Spotify');
 
-  let token = await getValidAccessToken();
-  if (!token) throw new Error('Not authenticated with Spotify');
+        const doFetch = async (t) => fetch(`${BASE_URL}${endpoint}`, {
+          ...options,
+          headers: { 'Authorization': `Bearer ${t}`, ...options.headers },
+        });
 
-  let response = await fetch(`${BASE_URL}${endpoint}`, {
-    ...options,
-    headers: {
-      'Authorization': `Bearer ${token}`,
-      ...options.headers,
-    },
+        let response = await doFetch(token);
+
+        // Auto-refresh on 401
+        if (response.status === 401) {
+          token = await refreshAccessToken();
+          response = await doFetch(token);
+        }
+
+        // Retry on 429 with Retry-After header
+        if (response.status === 429) {
+          const retryAfter = parseInt(response.headers.get('Retry-After') || '2', 10);
+          console.warn(`Spotify: Rate limited. Queue pausing for ${retryAfter}s...`);
+          await new Promise(r => setTimeout(r, retryAfter * 1000));
+          response = await doFetch(token);
+        }
+
+        if (!response.ok) {
+          const err = await response.json().catch(() => ({ error: { message: response.statusText } }));
+          // Pass 429 back out if it still fails so TrackResolver can degrade gracefully
+          const errorObj = new Error(`Spotify API error: ${err.error?.message || response.statusText}`);
+          if (response.status === 429) errorObj.message += ' (429 Rate Limit)';
+          throw errorObj;
+        }
+
+        resolve(await response.json());
+      } catch (err) {
+        reject(err);
+      }
+
+      // Enforce the minimum gap BEFORE the next queued item can execute
+      await new Promise(r => setTimeout(r, MIN_REQUEST_INTERVAL_MS));
+    });
   });
-
-  // Auto-refresh on 401
-  if (response.status === 401) {
-    token = await refreshAccessToken();
-    response = await fetch(`${BASE_URL}${endpoint}`, {
-      ...options,
-      headers: {
-        'Authorization': `Bearer ${token}`,
-        ...options.headers,
-      },
-    });
-  }
-
-  // Retry on 429 with Retry-After header (or 2s default)
-  if (response.status === 429) {
-    const retryAfter = parseInt(response.headers.get('Retry-After') || '2', 10);
-    console.warn(`Spotify: Rate limited. Retrying in ${retryAfter}s...`);
-    await new Promise(r => setTimeout(r, retryAfter * 1000));
-    _lastRequestTime = Date.now();
-    response = await fetch(`${BASE_URL}${endpoint}`, {
-      ...options,
-      headers: {
-        'Authorization': `Bearer ${token}`,
-        ...options.headers,
-      },
-    });
-  }
-
-  if (!response.ok) {
-    const err = await response.json().catch(() => ({ error: { message: response.statusText } }));
-    throw new Error(`Spotify API error: ${err.error?.message || response.statusText}`);
-  }
-
-  return response.json();
 }
 
 // --- User's Top Items (for Profiler Agent) ---

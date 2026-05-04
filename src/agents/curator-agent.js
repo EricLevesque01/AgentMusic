@@ -66,10 +66,8 @@ export class CuratorAgent {
     if (/deep.?dive.*into|all\s+\w|only\s+\w|just\s+\w|discography|catalog|everything by|check.?out|listen to|try\s+\w|friend.*told|recommend|heard about|got.?into/i.test(intent)) {
       return {
         intentType: 'artist_focus',
-        targetTracks: '12-20 — aim for the upper end; this is a deep-dive',
-        maxPerArtist: 'no limit for the PRIMARY artist — this is an artist-focused request',
-        maxPerArtistNum: 99,
-        diversityNote: 'The user wants to hear THIS artist. The PRIMARY artist should dominate — aim for 10-15 tracks from them. Supporting/related artists are context only: MAX 2 tracks per supporting artist, MAX 4 supporting-artist tracks total across the whole playlist.',
+        targetTracks: '10-20 — use your judgment based on the artist\'s catalog depth',
+        diversityNote: 'The user wants to hear THIS artist. The PRIMARY artist should absolutely dominate the playlist (up to 100% of tracks if appropriate). If the overall track count is low, just stick to the requested artist. Supporting artists are only context and should be sparse.',
         eraNote: 'Span the artist\'s career — include early, peak, and recent work if available.',
       };
     }
@@ -79,9 +77,7 @@ export class CuratorAgent {
       return {
         intentType: 'genre_exploration',
         targetTracks: '12-20 — enough to give a real tour of the genre',
-        maxPerArtist: '1 — genre exploration demands maximum artist diversity',
-        maxPerArtistNum: 1,
-        diversityNote: 'MAXIMUM DIVERSITY REQUIRED: Every track must be from a DIFFERENT artist.',
+        diversityNote: 'Genre exploration demands MAXIMUM DIVERSITY. Mix it up completely. Every track should ideally be from a different artist to provide a broad survey of the style.',
         eraNote: 'Span multiple decades and sub-styles.',
       };
     }
@@ -90,10 +86,8 @@ export class CuratorAgent {
     if (/stud|work.?out|gym|driv|cook|relax|sleep|focus|chill|party|dinner|morning|night|run|jog|meditat/i.test(intent)) {
       return {
         intentType: 'mood_activity',
-        targetTracks: '15-25 — mood playlists should feel like a full session',
-        maxPerArtist: '3 or 4 — grouping tracks by the same artist helps sustain a mood',
-        maxPerArtistNum: 4,
-        diversityNote: 'Be intentional about clustering. If an artist perfectly captures the mood, include a "mini-dive" of 3-4 tracks from them rather than artificially jumping around.',
+        targetTracks: '10-25 — choose a length that fits the mood (e.g. tight 10 for focus, 20+ for a party)',
+        diversityNote: 'Be highly intentional about clustering. If an artist perfectly captures the mood, include a "mini-dive" of 3-5 tracks from them rather than artificially jumping around. If the playlist is short, it\'s perfectly fine if it only features 2 or 3 artists total.',
         eraNote: 'Era is less important than mood cohesion.',
       };
     }
@@ -101,10 +95,8 @@ export class CuratorAgent {
     // Default / general
     return {
       intentType: 'general',
-      targetTracks: '15-20 — choose whatever length feels right for the intent',
-      maxPerArtist: '3 or 4 — you can feature mini-blocks of artists if they anchor the vibe',
-      maxPerArtistNum: 4,
-      diversityNote: 'Balance familiarity with discovery. Do not be afraid to pick 3 or 4 tracks from a core artist if they define the intent, grouping them together to anchor the playlist.',
+      targetTracks: '10-20 — choose whatever length feels right for the intent',
+      diversityNote: 'Balance familiarity with discovery. Do not artificially force diversity — if 3 or 4 tracks from a core artist anchor the vibe perfectly, group them together.',
       eraNote: 'No specific era constraints. Let the intent guide temporal choices.',
     };
   }
@@ -152,27 +144,10 @@ export class CuratorAgent {
    * Returns the verified playlist and a log of enforcement actions.
    */
   _verifyPlaylist(playlist, params, onThought) {
-    const enforced = [];
-    const maxPerArtist = params.maxPerArtistNum;
-
-    // 1. Enforce per-artist cap
-    const artistCounts = {};
-    const verified = [];
-    for (const track of playlist) {
-      const artist = track.artistName;
-      artistCounts[artist] = (artistCounts[artist] || 0) + 1;
-      if (artistCounts[artist] <= maxPerArtist) {
-        verified.push(track);
-      } else {
-        enforced.push(`Removed extra track by ${artist} (limit: ${maxPerArtist} per artist)`);
-      }
-    }
-
-    if (enforced.length > 0 && onThought) {
-      onThought(`Curator QA: Enforced artist diversity — ${enforced.join('; ')}`);
-    }
-
-    return verified;
+    // We used to enforce a hard maxPerArtist cap here, but now we rely on the LLM's
+    // judgment (prompted via diversityNote) so it can create deep dives or 
+    // highly-clustered mood playlists naturally based on the contextual intent.
+    return playlist;
   }
 
   /**
@@ -304,7 +279,6 @@ SESSION INTENT: "${sessionIntent || 'General vibe'}"
 
 PLAYLIST PARAMETERS (determined by intent analysis):
 - Suggested track count: ${params.targetTracks}
-- Max tracks per artist: ${params.maxPerArtist}
 - ${params.diversityNote}
 - ${params.eraNote}
 
@@ -351,9 +325,8 @@ The target range is ${params.targetTracks}. Choose the right length for the inte
 - NEVER pad with mediocre tracks to hit a number. Quality over quantity.
 ${params.intentType === 'artist_focus' ? `
 ARTIST FOCUS HARD RULE: Count your tracks before finalizing:
-- Primary requested artist: use as many tracks as the pool contains (target 10-15)
-- Supporting/context artists: max 2 tracks each, max 4 total across the entire playlist
-- If you have 10+ tracks from the primary artist, include them ALL before reaching for supporting acts
+- Primary requested artist: use ALL available tracks from this artist (up to 100% of the playlist).
+- Supporting/context artists: ONLY include them if the primary artist's tracks are exhausted, and keep them to an absolute minimum.
 ` : ''}
 Return ONLY valid JSON.`;
 

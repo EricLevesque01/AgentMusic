@@ -402,10 +402,13 @@ export class ScoutAgent {
     const topArtistNames = (tasteState.topRankedArtists || []).slice(0, 5).map(a => a.name);
 
     // Step 1: Ask the LLM for a structured retrieval plan.
-    // Feed it the full taste context so it can be strategic, not generic.
+    // For exploration requests, DON'T feed the user's library — it biases the LLM
+    // toward "jazz-adjacent versions of your favorites" instead of actual jazz masters.
+    const intentType = this._classifyIntentType(sessionIntent);
+    const isExploration = intentType === 'exploration';
+
     let tasteContext = '';
     try {
-      // Prefer context.tier1 (pre-loaded) to avoid a second DataStore call
       const tier1 = context?.tier1 || UserModel.loadTier1();
       const dims = tier1?.tasteProfile?.musicDimensions;
       if (dims && dims._confidence > 0) {
@@ -416,6 +419,11 @@ export class ScoutAgent {
       }
     } catch (e) {}
 
+    // Build the user context block — omit library artists for exploration intents
+    const userContextBlock = isExploration
+      ? `${tasteContext}\n\nIMPORTANT: The user is asking to EXPLORE genres they don't know well. Do NOT recommend artists from their existing library. Instead, use your own musical knowledge to find canonical, essential artists in the requested genres. Think like a record store clerk recommending the real deal, not approximations.`
+      : `User's top genres: ${topGenres.join(', ')}\nUser's top artists: ${topArtistNames.join(', ')}${tasteContext}`;
+
     const prompt = `${buildSoulPrefix()}
 
 You are the Scout — a music discovery agent. Given the session intent, decide:
@@ -424,8 +432,7 @@ You are the Scout — a music discovery agent. Given the session intent, decide:
 3. WHY these choices serve the intent
 
 Session intent: "${sessionIntent}"
-User's top genres: ${topGenres.join(', ')}
-User's top artists: ${topArtistNames.join(', ')}${tasteContext}
+${userContextBlock}
 ${(() => { const mems = context?.agentMemories || []; return mems.length > 0 ? `\nPERMANENT USER NOTES:\n${mems.map(m => '- ' + m).join('\n')}` : ''; })()}
 
 Think about what kind of request this is and adapt your retrieval strategy.
@@ -437,7 +444,7 @@ You have THREE ways to find tracks — use whichever combination best serves the
 
 When to use each:
 - **Scene/geographic** ("Connecticut indie scene", "local NYC punk bands", "UK post-punk"): Use 'artists' with 10-15 bands that represent that sound/region/era from your training knowledge. If you can't name hyper-local acts, use well-known acts from that genre and region as a proxy. Also use 'searchQueries' like 'genre:indie rock northeast' to cast a wider net.
-- **Genre exploration** ("explore jazz"): Use 'artists' with 10-15 canonical names spanning eras.
+- **Genre exploration** ("explore jazz", "jazz, soul, bossa nova deep cuts"): Use 'artists' with 10-15 CANONICAL artists from the requested genre — the legends, the must-knows, spanning different eras and subgenres. Do NOT pick artists adjacent to the user's existing taste. Also use 'searchQueries' with genre tags and 'specificTracks' for iconic deep cuts.
 - **Artist focus** ("check out Geese"): Use 'artists' with the target first + related artists. Consider adding 'specificTracks' if you know standout tracks.
 - **Mood/theme** ("Beatles love songs", "late night drive"): PREFER 'specificTracks' and 'searchQueries' — top tracks are too generic for mood-specific requests. Name the exact songs that fit the mood.
 - **Deep dive** ("deep cuts from Radiohead"): Use 'specificTracks' exclusively — name lesser-known gems, not the hits.

@@ -294,7 +294,14 @@ export class ChatPanel {
           messagesEl.insertAdjacentHTML('beforeend', this._botBubble(`**Your Musical Vibe:**<br><br>${profile}`));
         } else if (actionableTypes.includes(action.type) && this.orchestrator) {
           try {
-            await this.orchestrator.handleConciergeAction(action);
+            const newContext = await this.orchestrator.handleConciergeAction(action);
+            
+            if (action.type === 'create_playlist' && newContext) {
+              window.TG.lastContext = newContext;
+              const { DataStore } = await import('../../data/data-store.js');
+              DataStore.saveToLibrary(newContext, action.theme || 'Concierge Curated Mix', 'concierge');
+            }
+            
             window.dispatchEvent(new CustomEvent('tastegraph:playlist-updated'));
             messagesEl.insertAdjacentHTML('beforeend', this._botBubble('✅ Action completed!', true));
           } catch (e) {

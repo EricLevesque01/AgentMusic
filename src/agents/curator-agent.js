@@ -13,45 +13,9 @@ import { UserModel } from './user-model.js';
 import { DataStore } from '../data/data-store.js';
 import { formatTasteBriefForPrompt } from './taste-brief.js';
 
-/**
- * JSON Schema for the Curator's response.
- * Passed as the Ollama `format:` parameter to guarantee syntactically valid JSON
- * and eliminate the #1 source of Ollama pipeline failures (malformed output).
- * The Gemini path ignores this — it uses prompt instructions instead.
- *
- * Research basis: "Syntactically valid JSON is easy because Ollama supports
- * structured outputs with a JSON schema." (Deep Research, 2026)
- */
-const CURATOR_RESPONSE_SCHEMA = {
-  type: 'object',
-  properties: {
-    reflection: {
-      type: 'string',
-      description: '2-3 sentence curator\'s reflection on the playlist theme and curation choices',
-    },
-    playlistName: {
-      type: 'string',
-      description: 'Evocative, specific playlist name (not generic)',
-    },
-    playlistSummary: {
-      type: 'string',
-      description: 'One compelling sentence describing the playlist\'s vibe and emotional arc',
-    },
-    playlist: {
-      type: 'array',
-      items: {
-        type: 'object',
-        properties: {
-          id:     { type: 'string', description: 'Spotify track ID' },
-          reason: { type: 'string', description: '1-2 sentences: why this track fits — reference specific user context, anchored artists, or stated preferences' },
-        },
-        required: ['id', 'reason'],
-      },
-      description: 'Ordered list of selected tracks',
-    },
-  },
-  required: ['reflection', 'playlistName', 'playlistSummary', 'playlist'],
-};
+// Note: We previously enforced a strict JSON schema via Gemini's responseSchema feature,
+// but this caused the model to hang on large dynamic arrays. The Curator now generates
+// free-form JSON guided by the system prompt, parsed by extractJSON().
 
 export class CuratorAgent {
 

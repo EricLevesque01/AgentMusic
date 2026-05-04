@@ -58,13 +58,28 @@ export class CuratorAgent {
   /**
    * Classify the session intent to determine adaptive playlist parameters.
    * This gives the LLM the right context to make intentional curation decisions.
+   * If the user specifies a track count (e.g. "50 tracks", "give me 30 songs"),
+   * that overrides the default range.
    */
   _analyzeIntent(sessionIntent) {
     const intent = (sessionIntent || '').toLowerCase();
 
+    // --- Extract user-specified track count ---
+    // Matches: "50 tracks", "give me 30 songs", "about 20", "at least 15", "make it 25"
+    let userRequestedCount = null;
+    const countMatch = intent.match(/(\d{1,3})\s*(?:tracks?|songs?|tunes?)/i)
+      || intent.match(/(?:about|around|at\s+least|make\s+it|give\s+me|want)\s*(\d{1,3})/i)
+      || intent.match(/(\d{1,3})\s*(?:long|big|extended)/i);
+    if (countMatch) {
+      const n = parseInt(countMatch[1], 10);
+      if (n >= 5 && n <= 50) userRequestedCount = n;
+    }
+
+    let params;
+
     // Artist focus: "deep dive into Miles Davis", "check out Geese", "my friend told me to listen to X"
     if (/deep.?dive.*into|all\s+\w|only\s+\w|just\s+\w|discography|catalog|everything by|check.?out|listen to|try\s+\w|friend.*told|recommend|heard about|got.?into|playlist\s+for|playlist\s+of|playlist\s+by|\bartist\b|\bband\b/i.test(intent)) {
-      return {
+      params = {
         intentType: 'artist_focus',
         targetTracks: '15-25 — use your judgment based on the artist\'s catalog depth',
         diversityNote: 'The user wants to hear THIS artist. The PRIMARY artist should absolutely dominate the playlist (up to 100% of tracks if appropriate). If the overall track count is low, just stick to the requested artist. Supporting artists are only context and should be sparse.',
@@ -73,8 +88,8 @@ export class CuratorAgent {
     }
 
     // Genre exploration: "explore jazz", "introduce me to electronic"
-    if (/explor|introduce|get.?into|new to|first time|haven.t listened|teach me|guide.*through/i.test(intent)) {
-      return {
+    else if (/explor|introduce|get.?into|new to|first time|haven.t listened|teach me|guide.*through/i.test(intent)) {
+      params = {
         intentType: 'genre_exploration',
         targetTracks: '18-30 — enough to give a real tour of the genre',
         diversityNote: 'Genre exploration demands MAXIMUM DIVERSITY. Mix it up completely. Every track should ideally be from a different artist to provide a broad survey of the style.',
@@ -83,8 +98,8 @@ export class CuratorAgent {
     }
 
     // Mood/activity: "studying", "workout", "driving"
-    if (/stud|work.?out|gym|driv|cook|relax|sleep|focus|chill|party|dinner|morning|night|run|jog|meditat/i.test(intent)) {
-      return {
+    else if (/stud|work.?out|gym|driv|cook|relax|sleep|focus|chill|party|dinner|morning|night|run|jog|meditat/i.test(intent)) {
+      params = {
         intentType: 'mood_activity',
         targetTracks: '15-30 — choose a length that fits the mood (e.g. tight 15 for focus, 25+ for a party)',
         diversityNote: 'Be highly intentional about clustering. If an artist perfectly captures the mood, include a "mini-dive" of 3-5 tracks from them rather than artificially jumping around. If the playlist is short, it\'s perfectly fine if it only features 2 or 3 artists total.',
@@ -93,12 +108,21 @@ export class CuratorAgent {
     }
 
     // Default / general
-    return {
-      intentType: 'general',
-      targetTracks: '15-25 — choose whatever length feels right for the intent',
-      diversityNote: 'Balance familiarity with discovery. Do not artificially force diversity — if 3 or 4 tracks from a core artist anchor the vibe perfectly, group them together.',
-      eraNote: 'No specific era constraints. Let the intent guide temporal choices.',
-    };
+    else {
+      params = {
+        intentType: 'general',
+        targetTracks: '15-25 — choose whatever length feels right for the intent',
+        diversityNote: 'Balance familiarity with discovery. Do not artificially force diversity — if 3 or 4 tracks from a core artist anchor the vibe perfectly, group them together.',
+        eraNote: 'No specific era constraints. Let the intent guide temporal choices.',
+      };
+    }
+
+    // Override target tracks if the user specified a count
+    if (userRequestedCount) {
+      params.targetTracks = `exactly ${userRequestedCount} tracks — the user specifically requested this count`;
+    }
+
+    return params;
   }
 
   /**

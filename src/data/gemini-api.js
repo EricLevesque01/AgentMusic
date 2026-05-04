@@ -61,7 +61,7 @@ async function _callGemini(systemPrompt, messages, toolDeclarations, modelTier, 
     tools: toolsObj.length > 0 ? toolsObj : undefined,
     generationConfig: {
       temperature:     0.7,
-      maxOutputTokens: modelTier === 'reasoning' ? 4096 : 2048,
+      maxOutputTokens: 8192,
       ...(formatSchema && (!toolsObj || toolsObj.length === 0) ? { 
         responseMimeType: "application/json", 
         responseSchema: formatSchema 

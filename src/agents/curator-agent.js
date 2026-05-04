@@ -91,9 +91,9 @@ export class CuratorAgent {
       return {
         intentType: 'mood_activity',
         targetTracks: '15-25 — mood playlists should feel like a full session',
-        maxPerArtist: '2',
-        maxPerArtistNum: 2,
-        diversityNote: 'Mix familiar favorites with new discoveries that match the mood.',
+        maxPerArtist: '3 or 4 — grouping tracks by the same artist helps sustain a mood',
+        maxPerArtistNum: 4,
+        diversityNote: 'Be intentional about clustering. If an artist perfectly captures the mood, include a "mini-dive" of 3-4 tracks from them rather than artificially jumping around.',
         eraNote: 'Era is less important than mood cohesion.',
       };
     }
@@ -102,9 +102,9 @@ export class CuratorAgent {
     return {
       intentType: 'general',
       targetTracks: '15-20 — choose whatever length feels right for the intent',
-      maxPerArtist: '2',
-      maxPerArtistNum: 2,
-      diversityNote: 'Balance familiarity with discovery. Mix known favorites with new finds.',
+      maxPerArtist: '3 or 4 — you can feature mini-blocks of artists if they anchor the vibe',
+      maxPerArtistNum: 4,
+      diversityNote: 'Balance familiarity with discovery. Do not be afraid to pick 3 or 4 tracks from a core artist if they define the intent, grouping them together to anchor the playlist.',
       eraNote: 'No specific era constraints. Let the intent guide temporal choices.',
     };
   }

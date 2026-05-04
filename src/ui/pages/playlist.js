@@ -141,7 +141,10 @@ export function renderPlaylistPage(container) {
     listEl.querySelectorAll('.delete-btn').forEach(btn => {
       btn.addEventListener('click', (e) => {
         const id = e.currentTarget.dataset.id;
+        // Delete from both stores so Home page and Playlists page stay in sync
         DataStore.deleteSavedPlaylist(id);
+        const library = DataStore.getPlaylistLibrary().filter(x => x.id !== id);
+        DataStore.save('playlist_library', library);
         renderLibrary();
       });
     });

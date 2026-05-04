@@ -532,11 +532,13 @@ export class TasteGame {
 
   /**
    * Select a contender using a weighted multi-strategy approach.
-   * Strategies:
-   *   - taste-adjacent (40%): pick from artists sharing genres with the user's top-rated artists
-   *   - coverage-gap (25%): pick from under-explored genre/era buckets
-   *   - rising-star (20%): pick artists with high early win-rates that need more calibration
-   *   - wild-card (15%): pure least-calibrated for breadth
+   * Strategies (probability-weighted for adaptive, diverse matchups):
+   *   - taste-adjacent (30%): artists sharing genres with the user's top-rated
+   *   - coverage-gap (20%): under-explored genre/era buckets
+   *   - genre-contrast (15%): artists from genres with ZERO Elo data — true unknown territory
+   *   - rising-star (15%): high early win-rate artists that need more calibration
+   *   - boundary-test (10%): pit a low-win artist to re-test if dismissal was genuine
+   *   - wild-card (10%): pure least-calibrated for breadth
    */
   _selectContender(viableAll, eloRatings) {
     if (viableAll.length === 0) return null;
@@ -544,14 +546,12 @@ export class TasteGame {
     const roll = Math.random();
     let contender = null;
 
-    // --- Strategy 1: Taste-Adjacent (40%) ---
-    // Find contenders that share genres with the user's highest-rated artists
-    if (roll < 0.40) {
+    // --- Strategy 1: Taste-Adjacent (30%) ---
+    if (roll < 0.30) {
       const affinities = this._getUserGenreAffinities(eloRatings);
       const topGenres = new Set(affinities.slice(0, 5).map(a => a.genre));
 
       if (topGenres.size > 0) {
-        // Score each viable artist by how many of their genres overlap with the user's top genres
         const scored = viableAll.map(a => {
           const artistGenres = (a.genres || []).map(g => g.toLowerCase());
           const overlap = artistGenres.filter(g => topGenres.has(g) || [...topGenres].some(tg => g.includes(tg) || tg.includes(g))).length;
@@ -559,7 +559,6 @@ export class TasteGame {
         }).filter(s => s.overlap > 0);
 
         if (scored.length > 0) {
-          // Sort by overlap (most genre match first), then by fewest comparisons within that
           scored.sort((a, b) => {
             if (b.overlap !== a.overlap) return b.overlap - a.overlap;
             return (eloRatings[a.artist.id]?.comparison_count || 0) - (eloRatings[b.artist.id]?.comparison_count || 0);
@@ -570,8 +569,8 @@ export class TasteGame {
       }
     }
 
-    // --- Strategy 2: Coverage Gap (25%) ---
-    if (!contender && roll < 0.65) {
+    // --- Strategy 2: Coverage Gap (20%) ---
+    if (!contender && roll < 0.50) {
       const gap = this._getCoverageGap(eloRatings);
       if (gap && gap.candidates.length > 0) {
         const poolSize = Math.min(3, gap.candidates.length);
@@ -579,27 +578,69 @@ export class TasteGame {
       }
     }
 
-    // --- Strategy 3: Rising Star (20%) ---
-    // Artists with few comparisons but high win rates — they're promising but need more data
-    if (!contender && roll < 0.85) {
+    // --- Strategy 3: Genre Contrast (15%) ---
+    // Pick artists whose genres have ZERO overlap with any Elo-rated genre.
+    // Different from coverage-gap: that finds under-explored but *known* buckets.
+    // This finds completely uncharted territory the user has never been asked about.
+    if (!contender && roll < 0.65) {
+      const ratedGenres = new Set();
+      for (const data of Object.values(eloRatings)) {
+        if ((data.comparison_count || 0) > 0) {
+          for (const g of (data.genres || [])) ratedGenres.add(g.toLowerCase());
+        }
+      }
+
+      const uncharted = viableAll.filter(a => {
+        const artistGenres = (a.genres || []).map(g => g.toLowerCase());
+        if (artistGenres.length === 0) return false;
+        return !artistGenres.some(g =>
+          ratedGenres.has(g) || [...ratedGenres].some(rg => g.includes(rg) || rg.includes(g))
+        );
+      });
+
+      if (uncharted.length > 0) {
+        const poolSize = Math.min(4, uncharted.length);
+        contender = uncharted[Math.floor(Math.random() * poolSize)];
+      }
+    }
+
+    // --- Strategy 4: Rising Star (15%) ---
+    if (!contender && roll < 0.80) {
       const risingStars = viableAll.filter(a => {
         const data = eloRatings[a.id];
         if (!data) return false;
         const comps = data.comparison_count || 0;
         const wins = data.wins || 0;
-        // Between 2-8 comparisons with a > 50% win rate — promising but uncertain
         return comps >= 2 && comps <= 8 && (wins / comps) > 0.5;
       });
 
       if (risingStars.length > 0) {
-        // Prefer the ones with the fewest comparisons (most uncertain)
         risingStars.sort((a, b) => (eloRatings[a.id]?.comparison_count || 0) - (eloRatings[b.id]?.comparison_count || 0));
         const poolSize = Math.min(4, risingStars.length);
         contender = risingStars[Math.floor(Math.random() * poolSize)];
       }
     }
 
-    // --- Strategy 4: Wild Card (15%) / Fallback ---
+    // --- Strategy 5: Boundary Test (10%) ---
+    // Re-test artists with losing records (2-6 comps, <40% win rate).
+    // People's opinions drift — this keeps rankings honest and gives underdogs
+    // a second chance against different opponents.
+    if (!contender && roll < 0.90) {
+      const underdogs = viableAll.filter(a => {
+        const data = eloRatings[a.id];
+        if (!data) return false;
+        const comps = data.comparison_count || 0;
+        const wins = data.wins || 0;
+        return comps >= 2 && comps <= 6 && (wins / comps) < 0.4;
+      });
+
+      if (underdogs.length > 0) {
+        const poolSize = Math.min(3, underdogs.length);
+        contender = underdogs[Math.floor(Math.random() * poolSize)];
+      }
+    }
+
+    // --- Strategy 6: Wild Card (10%) / Fallback ---
     if (!contender) {
       const sorted = [...viableAll].sort((a, b) =>
         (eloRatings[a.id]?.comparison_count || 0) - (eloRatings[b.id]?.comparison_count || 0)

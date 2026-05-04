@@ -107,6 +107,55 @@ export class ScoutAgent {
       }
     }
 
+    // --- Direct Spotify fallback for specific requests with empty pools ---
+    // If the LLM retrieval plan failed/returned nothing but we know the user named
+    // an artist, try a direct Spotify search. No LLM needed — just name → search → top tracks.
+    if (isSpecificRequest && candidatePool.length === 0 && sessionIntent) {
+      if (onThought) onThought('Scout: LLM retrieval returned empty — trying direct Spotify lookup…');
+      try {
+        // Extract likely artist names from the intent
+        const { searchArtists: spotifySearch, getArtistTopTracks } = await import('../data/spotify-api.js');
+        // Try the raw intent words as an artist search
+        const intentClean = sessionIntent
+          .replace(/^(build|make|create|give me|play|find|get|show)\s+(a\s+)?(playlist|mix|tracks?|songs?)\s*(for|of|by|around|with|from)?\s*/i, '')
+          .replace(/^(my friend.*(?:listen to|check out|try)|i (?:want to|should) (?:listen to|check out|hear|try))\s*/i, '')
+          .replace(/[,.].*$/, '') // everything after comma/period is usually context
+          .replace(/\s*(?:more|what|some|tracks|songs|should|check out).*$/i, '')
+          .trim();
+
+        if (intentClean.length > 1) {
+          const artists = await spotifySearch(intentClean, 3);
+          for (const artist of artists) {
+            try {
+              const tracks = await getArtistTopTracks(artist.id);
+              for (const track of (tracks || []).slice(0, 15)) {
+                if (!seenTrackIds.has(track.id)) {
+                  seenTrackIds.add(track.id);
+                  candidatePool.push({
+                    track,
+                    artistName: artist.name,
+                    artistId: artist.id,
+                    source: 'direct_spotify_fallback',
+                    hopDistance: 0,
+                    eloScore: 1900,
+                    tags: artist.genres || [],
+                  });
+                }
+              }
+              if (candidatePool.length > 0) {
+                if (onThought) onThought(`Scout: Direct Spotify lookup found ${candidatePool.length} tracks from "${artist.name}"`);
+                break; // Found tracks for the first matching artist — stop
+              }
+            } catch (trackErr) {
+              console.debug(`Scout: Failed to get top tracks for ${artist.name}:`, trackErr.message);
+            }
+          }
+        }
+      } catch (fallbackErr) {
+        console.warn('Scout: Direct Spotify fallback failed:', fallbackErr.message);
+      }
+    }
+
     // --- Web-Grounded Discovery: Search the real internet for topical connections ---
     // Only run if the intent override didn't already produce a focused pool
     if (!intentOverrideActive && seedArtists.length > 0) {

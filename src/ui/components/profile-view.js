@@ -315,19 +315,11 @@ export class ProfileView {
       applyProfile(cached.profile);
       if (el) el.style.opacity = '1';
 
-      // Check if stale (> 30 min, artist lineup changed, or missing dynamic tiers from older cache)
-      const isStale = Date.now() - (cached.generatedAt || 0) > 30 * 60 * 1000 || !cached.profile?.dynamicTiers;
+      // Check if stale (> 24 hours or artist lineup changed)
+      const isStale = Date.now() - (cached.generatedAt || 0) > 24 * 60 * 60 * 1000;
       const artistsChanged = cached.artistHash !== currentHash;
 
       if (isStale || artistsChanged) {
-        console.warn('Profile cache invalidated! Triggering LLM regeneration.', {
-          isStale,
-          artistsChanged,
-          cachedHash: cached.artistHash,
-          currentHash,
-          hasDynamicTiers: !!cached.profile?.dynamicTiers,
-          timeSinceGen: Date.now() - (cached.generatedAt || 0)
-        });
         const narrator = new NarratorAgent();
         narrator.generateAgenticProfile(tasteState).then(profile => {
           if (profile) {

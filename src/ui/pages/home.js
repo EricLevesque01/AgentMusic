@@ -322,14 +322,67 @@ export function renderHomePage(container) {
   // Shared action handler (extracted so dismiss can re-register it)
   function _handleAction(artist, action) {
     switch (action) {
-      case 'playlist':
-        location.hash = '#/playlist';
-        setTimeout(() => {
-          const vibeInput = document.getElementById('vibe-input');
-          if (vibeInput) vibeInput.value = `Build a playlist around ${artist.name} — ${artist.reason}`;
-          document.getElementById('toggle-generator-btn')?.click();
-        }, 200);
+      case 'playlist': {
+        const orch = window.TG?.orchestrator;
+        if (!orch) { location.hash = '#/playlist'; break; }
+
+        const intent = `Build a playlist around ${artist.name}`;
+
+        // Show inline loading state on the Discover page
+        gridEl.style.display = 'none';
+        suggestionContainer.style.display = 'none';
+        statsEl.style.display = 'none';
+        document.querySelector('#page-home > header').style.display = 'none';
+        document.getElementById('playlist-grid-header')?.style.setProperty('display', 'none');
+        detailEl.style.display = 'block';
+        detailEl.innerHTML = `
+          <div class="glass-card" style="padding: var(--space-8); text-align: center;">
+            <div class="spinner" style="width: 32px; height: 32px; border: 3px solid var(--accent-primary); border-top-color: transparent; border-radius: 50%; display: inline-block; animation: spin 1s linear infinite; margin-bottom: var(--space-4);"></div>
+            <p style="color: var(--text-primary); font-weight: var(--font-weight-medium);">Building your ${artist.name} playlist...</p>
+            <p style="color: var(--text-muted); font-size: var(--font-size-sm); margin-top: var(--space-2);">The agents are scouting tracks and curating your mix.</p>
+          </div>
+        `;
+
+        // Generate and save inline (async IIFE)
+        (async () => {
+          try {
+            const context = await orch.generatePlaylist('user_local', intent);
+            window.TG.lastContext = context;
+            DataStore.saveToLibrary(context, intent, 'suggestion');
+
+            // Render the playlist with a back button
+            detailEl.innerHTML = '';
+            const backBtn = document.createElement('button');
+            backBtn.className = 'btn btn-ghost';
+            backBtn.innerHTML = '← Back to Discover';
+            backBtn.style.marginBottom = 'var(--space-4)';
+            backBtn.onclick = () => {
+              detailEl.style.display = 'none';
+              detailEl.innerHTML = '';
+              gridEl.style.display = '';
+              suggestionContainer.style.display = '';
+              statsEl.style.display = '';
+              document.querySelector('#page-home > header').style.display = '';
+              document.getElementById('playlist-grid-header')?.style.removeProperty('display');
+              renderGrid();
+              window.scrollTo(0, 0);
+            };
+            detailEl.appendChild(backBtn);
+            playlistView.render(context);
+          } catch (err) {
+            console.error('Suggestion playlist generation failed:', err);
+            detailEl.innerHTML = `
+              <div class="glass-card" style="padding: var(--space-6); text-align: center;">
+                <div style="font-size: 2rem; margin-bottom: var(--space-3);">⚠️</div>
+                <p style="color: var(--text-primary); font-weight: var(--font-weight-medium);">Generation failed</p>
+                <p style="color: var(--text-muted); font-size: var(--font-size-sm); margin-top: var(--space-2);">${err.message}</p>
+                <button class="btn btn-ghost" style="margin-top: var(--space-4);" onclick="location.hash='#/'">Back to Discover</button>
+              </div>
+            `;
+          }
+        })();
         break;
+      }
 
       case 'compare':
         if (typeof window !== 'undefined' && artist.spotifyId) {

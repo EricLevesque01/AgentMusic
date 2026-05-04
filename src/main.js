@@ -133,17 +133,21 @@ async function init() {
     window.TG.scheduler = scheduler;
   }
 
+  // One-time migration: prune bloated Spotify caches from pre-stripHeavyMetadata versions.
+  // This breaks the QuotaExceeded → purge → re-fetch → re-invalidate vicious cycle.
+  const PRUNE_VERSION_KEY = 'tg_cache_pruned_v2';
+  if (!localStorage.getItem(PRUNE_VERSION_KEY)) {
+    localStorage.removeItem('tg_top_artists');
+    localStorage.removeItem('tg_top_tracks');
+    localStorage.setItem(PRUNE_VERSION_KEY, '1');
+    console.info('DataStore: Pruned legacy bloated Spotify caches (one-time migration).');
+  }
+
   // On boot, if suggested artists cache has fewer than 6 items, clear it
   // so it regenerates with the new higher-quantity parameters
   const cachedArtists = DataStore.getSuggestedArtistsCache();
   if (cachedArtists && cachedArtists.length < 6) {
     DataStore.clearSuggestedArtistsCache();
-  }
-
-  // Clear legacy agentic profile cache to force regeneration of the new dynamic layout
-  const cachedProfile = DataStore.load('agentic_profile_cache');
-  if (cachedProfile && !cachedProfile.profile) {
-    localStorage.removeItem('tastegraph_agentic_profile_cache');
   }
 
   // Set up routing

@@ -66,6 +66,7 @@ export class ScoutAgent {
     // returns an empty array for a specific request, we still suppress seed expansion.
     const intentType = this._classifyIntentType(sessionIntent);
     const isSpecificRequest = intentType === 'specific';
+    this._isSpecificRequest = isSpecificRequest; // Store for _addIntentOverrideTracks
     if (isSpecificRequest && onThought) onThought(`Scout: Detected specific artist/track request — seed expansion will be suppressed`);
 
     const hopDepth  = this.determineHopDepth(sessionIntent, context);
@@ -462,8 +463,8 @@ You MUST call the 'submit_retrieval_plan' tool.`;
       }
     }
 
-    // --- Last.fm graph expansion ---
-    if (lastfmSeeds.length > 0) {
+    // --- Last.fm graph expansion (skip for specific artist requests to avoid pool dilution) ---
+    if (lastfmSeeds.length > 0 && !this._isSpecificRequest) {
       for (const seed of lastfmSeeds.slice(0, 2)) {
         if (onThought) onThought(`Scout: Expanding from "${seed}" via Last.fm graph...`);
         try {
@@ -496,7 +497,7 @@ You MUST call the 'submit_retrieval_plan' tool.`;
             // Primary artist (first in list) gets up to 10 tracks;
             // supporting artists get 2-3 for context.
             const artistIndex = artistsToLookup.indexOf(artistName);
-            const trackLimit = artistIndex === 0 ? 10 : 3;
+            const trackLimit = (artistIndex === 0 && this._isSpecificRequest) ? 20 : (artistIndex === 0 ? 10 : 3);
             for (const track of tracks.slice(0, trackLimit)) {
               if (!seen.has(track.id)) {
                 seen.add(track.id);

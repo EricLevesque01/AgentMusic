@@ -144,9 +144,33 @@ export class CuratorAgent {
    * Returns the verified playlist and a log of enforcement actions.
    */
   _verifyPlaylist(playlist, params, onThought) {
-    // We used to enforce a hard maxPerArtist cap here, but now we rely on the LLM's
-    // judgment (prompted via diversityNote) so it can create deep dives or 
-    // highly-clustered mood playlists naturally based on the contextual intent.
+    // For artist_focus intents, enforce that the primary artist dominates the playlist.
+    // This is a safety net for when the LLM ignores the prompt constraint.
+    if (params.intentType === 'artist_focus' && playlist.length > 0 && params._rawIntent) {
+      // Extract the target artist name from the intent
+      const intentMatch = params._rawIntent.match(
+        /(?:playlist\s+(?:for|of|by|around)|check.?out|listen to|deep.?dive.*into|build.*(?:playlist|mix).*around)\s+(.+?)(?:\s*[\u2014\u2013—-]|\s*$)/i
+      );
+      if (intentMatch) {
+        const targetArtist = intentMatch[1].trim().toLowerCase();
+        const targetTracks = playlist.filter(t =>
+          (t.artistName || '').toLowerCase().includes(targetArtist)
+        );
+        const ratio = targetTracks.length / playlist.length;
+
+        if (ratio < 0.5 && targetTracks.length > 0) {
+          // LLM failed to honor the constraint — reorder to put target tracks first
+          // and trim non-target tracks to enforce dominance
+          const nonTarget = playlist.filter(t =>
+            !(t.artistName || '').toLowerCase().includes(targetArtist)
+          );
+          const maxNonTarget = Math.max(2, Math.floor(targetTracks.length * 0.4));
+          const enforced = [...targetTracks, ...nonTarget.slice(0, maxNonTarget)];
+          if (onThought) onThought(`Curator: Enforced artist focus — ${targetTracks.length} target tracks, trimmed ${nonTarget.length} → ${Math.min(nonTarget.length, maxNonTarget)} supporting`);
+          return enforced;
+        }
+      }
+    }
     return playlist;
   }
 
@@ -159,7 +183,8 @@ export class CuratorAgent {
 
     // --- Adaptive parameters based on intent ---
     const params = this._analyzeIntent(sessionIntent);
-    if (onThought) onThought(`Curator: Intent → "${params.intentType}" | Target: ${params.targetTracks} tracks, max ${params.maxPerArtist} per artist`);
+    params._rawIntent = sessionIntent; // Pass raw intent for _verifyPlaylist artist extraction
+    if (onThought) onThought(`Curator: Intent → "${params.intentType}" | Target: ${params.targetTracks} tracks`);
 
     // Fallback if pool is empty
     if (!candidatePool || candidatePool.length === 0) {
@@ -324,9 +349,11 @@ The target range is ${params.targetTracks}. Choose the right length for the inte
 - If the pool has 20+ high-quality tracks that all fit, use them. If the pool thins out below your standard after 12 tracks, stop there.
 - NEVER pad with mediocre tracks to hit a number. Quality over quantity.
 ${params.intentType === 'artist_focus' ? `
-ARTIST FOCUS HARD RULE: Count your tracks before finalizing:
-- Primary requested artist: use ALL available tracks from this artist (up to 100% of the playlist).
-- Supporting/context artists: ONLY include them if the primary artist's tracks are exhausted, and keep them to an absolute minimum.
+ARTIST FOCUS HARD RULE — THIS IS YOUR PRIMARY OBJECTIVE:
+- PRIMARY REQUESTED ARTIST MUST DOMINATE: Include ALL tracks from the requested artist that appear in the pool. The playlist MUST be at least 70% tracks by the requested artist.
+- Supporting/context artists: Include at most 2-3 tracks for sonic context. If the requested artist has 8+ tracks in the pool, supporting artists should represent less than 20% of the final playlist.
+- If you return a playlist where the majority of tracks are NOT by the requested artist, you have FAILED the task.
+- Count your tracks before submitting: how many are by the primary artist vs. others? If the ratio is below 70%, remove non-target tracks.
 ` : ''}
 Return ONLY valid JSON.`;
 

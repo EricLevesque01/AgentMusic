@@ -131,6 +131,26 @@ async function init() {
     const scheduler = new PlaylistScheduler(orchestrator);
     scheduler.start();
     window.TG.scheduler = scheduler;
+
+    // --- Background Profiler Warm-up ---
+    // On fresh login, top_artists is empty — suggested artists, sonic profile, and
+    // the Compare screen all fail silently. Run the Profiler once in the background
+    // so Spotify data is cached before the user navigates to any feature.
+    const needsWarmup = !DataStore.getTopArtists() || DataStore.getTopArtists().length < 5;
+    if (needsWarmup) {
+      setTimeout(async () => {
+        try {
+          const { ProfilerAgent } = await import('./agents/profiler-agent.js');
+          const profiler = new ProfilerAgent();
+          await profiler.buildTasteState();
+          console.info('TasteGraph: Background profiler warm-up complete.');
+          // Refresh the Home page suggestions now that data is available
+          window.dispatchEvent(new CustomEvent('tastegraph:profile-ready'));
+        } catch (e) {
+          console.warn('TasteGraph: Background profiler warm-up failed.', e.message);
+        }
+      }, 200);
+    }
   }
 
   // One-time migration: prune bloated Spotify caches from pre-stripHeavyMetadata versions.

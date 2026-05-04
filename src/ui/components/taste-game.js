@@ -150,8 +150,22 @@ export class TasteGame {
 
   async init() {
     this.renderLoading('Building your artist pool...');
+
+    // Race init against a 30-second timeout so the screen never hangs indefinitely
+    const initTimeout = new Promise((_, reject) =>
+      setTimeout(() => reject(new Error('Game init timed out after 30s')), 30000)
+    );
+
     try {
-      const tasteState = await this.profiler.buildTasteState();
+      await Promise.race([this._doInit(), initTimeout]);
+    } catch (err) {
+      this.renderError('Took too long to connect. Please try again.');
+      console.error('TasteGame init error:', err.message);
+    }
+  }
+
+  async _doInit() {
+    const tasteState = await this.profiler.buildTasteState();
       
       // 1. Save Spotify listening data to be "sprinkled in" strategically later
       this.spotifyArtists = tasteState.artists || [];
@@ -173,30 +187,30 @@ export class TasteGame {
         sessionAnchors = sessionAnchors.sort(() => 0.5 - Math.random()).slice(0, 15);
       }
       
-      const resolvedAnchors = [];
-      const anchorPromises = sessionAnchors.map(name => searchArtist(name).catch(() => null));
-      const results = await Promise.all(anchorPromises);
-      for (const found of results) {
-        if (found) resolvedAnchors.push(found);
+      // Fast-path: if we already have Spotify artist objects, use them directly
+      // and only look up anchor names that aren't in the Spotify library.
+      const spotifyArtistNames = new Set(this.spotifyArtists.map(a => a.name?.toLowerCase()));
+      const anchorsToSearch = sessionAnchors.filter(n => !spotifyArtistNames.has(n.toLowerCase()));
+
+      const resolvedAnchors = [...this.spotifyArtists];
+      if (anchorsToSearch.length > 0) {
+        const anchorPromises = anchorsToSearch.map(name => searchArtist(name).catch(() => null));
+        const results = await Promise.all(anchorPromises);
+        for (const found of results) {
+          if (found) resolvedAnchors.push(found);
+        }
       }
       this.knownArtists = resolvedAnchors;
 
-      // 2b. Merge Spotify listening data into known artists
-      // These are the user's ACTUAL library — they should be in the game pool from the start.
-      const knownIds = new Set(this.knownArtists.map(a => a.id));
-      for (const artist of this.spotifyArtists) {
-        if (artist?.id && !knownIds.has(artist.id)) {
-          knownIds.add(artist.id);
-          this.knownArtists.push(artist);
-        }
-      }
-
-      // 3. Initial expansion based on intelligent anchors
-      this.renderLoading('Discovering related artists...');
-      await this._expandPool(this.knownArtists.slice(0, 5), tasteState.topGenres || []);
-
-      // Merge and dedup by Spotify ID
+      // 2b. Merge Spotify listening data (already included in resolvedAnchors above)
       this._mergePools();
+
+      // 3. Expand with related artists if pool is thin
+      if (this.allArtists.length < 15) {
+        this.renderLoading('Discovering related artists...');
+        await this._expandPool(this.knownArtists.slice(0, 5), tasteState.topGenres || []);
+        this._mergePools();
+      }
 
       if (this.allArtists.length < 2) {
         this.renderError('Failed to initialize artist pool. Please try again.');
@@ -208,10 +222,6 @@ export class TasteGame {
 
       this.roundsPlayed = 0;
       this.nextRound();
-    } catch (err) {
-      this.renderError('Failed to initialize game.');
-      console.error(err);
-    }
   }
 
   _mergePools() {

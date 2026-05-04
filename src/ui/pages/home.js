@@ -500,6 +500,14 @@ export function renderHomePage(container) {
   };
   window.addEventListener('tastegraph:library-updated', libraryHandler);
 
+  // Listen for profiler warm-up completion — retry suggestions if the first attempt
+  // found no artists (fresh login before top_artists was cached)
+  window.addEventListener('tastegraph:profile-ready', () => {
+    if (!suggestionContainer.querySelector('.suggestion-card')) {
+      loadSuggestions();
+    }
+  }, { once: true });
+
   // New playlist button → navigate to playlist page
   document.getElementById('home-new-playlist-btn')?.addEventListener('click', () => {
     location.hash = '#/playlist';

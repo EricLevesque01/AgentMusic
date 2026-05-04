@@ -426,10 +426,8 @@ Return ONLY valid JSON.`;
         tracksArray.forEach(p => { reasonsMap[p.id] = p.reason; });
 
       } catch (retryErr) {
-        console.error("CuratorAgent: Both attempts failed, falling back to top Elo.", retryErr);
-        // Fallback: take up to the lower bound of the target range
-        const fallbackCount = parseInt(params.targetTracks.match(/\d+/)?.[0]) || 12;
-        selectedIds = poolForPrompt.slice(0, fallbackCount).map(p => p.id);
+        console.error("CuratorAgent: Both LLM attempts failed.", retryErr);
+        throw new Error('The AI curation service is currently unavailable. Please try again in a moment.');
       }
     }
 

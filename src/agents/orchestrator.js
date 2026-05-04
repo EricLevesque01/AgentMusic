@@ -167,25 +167,15 @@ export class Orchestrator {
     this._reportStatus('curator');
 
     // If the Scout returned an empty pool (e.g. hyper-local or abstract intent the LLM
-    // couldn't resolve to known artists), run a second Scout pass with an empty intent
-    // so normal Hop-0/1/2 seed expansion fires from the user's top-Elo artists.
-    // The original intent is preserved in context.sessionIntent for the Curator.
+    // couldn't resolve to known artists), throw a clear error instead of producing an
+    // unrelated playlist that ignores the user's intent.
     if (!context.candidatePool || context.candidatePool.length === 0) {
-      console.warn('Orchestrator: Scout returned empty pool — falling back to user top-artist seed expansion');
-      this._reportThought('Broadening search — couldn\'t find enough candidates for that specific request, pulling from your taste graph instead…');
-      try {
-        context.candidatePool = await this.scout.findCandidates(
-          context.tasteState,
-          '',  // empty intent triggers normal graph traversal
-          context,
-          this._reportThought.bind(this)
-        );
-      } catch (fallbackErr) {
-        console.warn('Orchestrator: Fallback seed expansion also failed:', fallbackErr.message);
-      }
+      throw new Error(
+        `Couldn't find any tracks matching "${context.sessionIntent}". ` +
+        `Try rephrasing your request, or ask for a specific artist or genre.`
+      );
     }
 
-    // Hard stop only if fallback also produced nothing
     context.validateForStage('curator');
     context.scoredPlaylist = await this.curator.rankAndSelect(
       context.tasteState,

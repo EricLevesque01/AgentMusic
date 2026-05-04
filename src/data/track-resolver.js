@@ -190,6 +190,10 @@ async function _lastfmFallback(artistId, artistName, limit) {
     const resolved = [];
     // Process in small batches to be gentle on Spotify search
     for (const lfTrack of lastfmTracks.slice(0, limit)) {
+      if (isSpotifyDegraded()) {
+        resolved.push(_buildMinimalTrack(lfTrack, artistId));
+        continue;
+      }
       try {
         const spotifyTrack = await searchTrack(lfTrack.name, lfTrack.artistName);
         if (spotifyTrack) {
@@ -285,6 +289,18 @@ export async function resolveSpecificTracks(trackRequests) {
       continue;
     }
 
+    if (isSpotifyDegraded()) {
+      resolved.push({
+        id: `lastfm_${req.artistName}_${req.trackName}`.replace(/\s+/g, '_').toLowerCase(),
+        name: req.trackName,
+        artists: [{ name: req.artistName }],
+        album: { name: 'Unknown Album', images: [] },
+        popularity: 50,
+        _source: 'lastfm_fallback'
+      });
+      continue;
+    }
+
     try {
       const track = await searchTrack(req.trackName, req.artistName);
       _topTracksCache.set(cacheKey, track);
@@ -318,6 +334,8 @@ export async function searchByIntent(query, limit = 10) {
   if (_topTracksCache.has(cacheKey)) {
     return _topTracksCache.get(cacheKey);
   }
+
+  if (isSpotifyDegraded()) return [];
 
   try {
     const tracks = await searchTracks(query, limit);

@@ -2,7 +2,7 @@
 
 > **A multi-agent AI system that learns your musical taste through active comparison and delivers intelligent, context-aware playlist curation.**
 
-Agent Music is a fully client-side web application built on a pipeline of cooperating AI agents. Rather than relying on a single monolithic model, each agent in the system is purpose-built for a narrow task — and routed to the language model best suited to that task. The system learns from every interaction: comparisons, skips, listening history, and natural language conversation all flow back into a shared taste representation that gets smarter over time.
+Agent Music is a client-side web app powered by a team of specialized AI agents. Instead of using one giant AI model for everything, we use multiple smaller agents that each handle a specific job — like analyzing your Spotify history, chatting with you, or building playlists. As you use the app, rate artists, and listen to music, the agents learn your unique taste and curate better recommendations over time.
 
 ---
 

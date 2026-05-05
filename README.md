@@ -285,7 +285,7 @@ All persistence uses localStorage via a unified `DataStore` class. Key design ch
 
 The Compare screen implements a **pairwise preference learning** system built on Elo ratings with Bradley-Terry extensions.
 
-**Why pairwise comparisons?** Direct rating scales ("Rate this artist 1-5") produce biased, inconsistent data. Forced choices between two specific options produce far more reliable preference signals — this is the same insight behind systems like Beli and every serious recommender that uses active learning.
+**Why pairwise comparisons?** Rating scales ("Rate this artist 1-5") require high cognitive effort and produce inconsistent data. Presenting a forced choice between two specific options drastically reduces cognitive friction. It turns rating into a simple, rapid-fire instinct — allowing the system to build a highly reliable preference model without fatiguing the user.
 
 **Matchmaking strategies:**
 - **Benchmark Test** — Known vs. New: calibrates a new artist against an anchor the user has already rated

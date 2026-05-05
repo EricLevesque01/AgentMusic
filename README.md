@@ -15,11 +15,7 @@ Agent Music is a client-side web app powered by a team of specialized AI agents.
   - [Scout Agent](#2-scout-agent)
   - [Curator Agent](#3-curator-agent)
   - [Narrator Agent](#4-narrator-agent)
-  - [Concierge Agent](#5-concierge-agent)
-  - [Session DJ Agent](#6-session-dj-agent)
-  - [Reflection Agent](#7-reflection-agent)
-  - [Suggested Artists Agent](#8-suggested-artists-agent)
-  - [Cultural Scout](#9-cultural-scout)
+  - [Suggested Artists Agent](#5-suggested-artists-agent)
 - [LLM Selection Rationale](#llm-selection-rationale)
 - [Supporting Infrastructure](#supporting-infrastructure)
 - [The Taste Game (Active Learning)](#the-taste-game-active-learning)
@@ -56,12 +52,12 @@ User Intent (natural language)
 └────┬──────────┬──────────┬──────────────────────┘
      │          │          │
      ▼          ▼          ▼
-┌─────────┐ ┌────────┐ ┌──────────────┐
-│Profiler │ │ Scout  │ │Cultural Scout│
-│  Agent  │ │ Agent  │ │  (web RAG)   │
-└────┬────┘ └───┬────┘ └──────┬───────┘
-     │          │              │
-     │    CandidatePool ◄──────┘
+┌─────────┐ ┌────────┐
+│Profiler │ │ Scout  │
+│  Agent  │ │ Agent  │
+└────┬────┘ └───┬────┘
+     │          │
+     │    CandidatePool
      │          │
      ▼          ▼
 ┌──────────────────────┐
@@ -80,8 +76,7 @@ User Intent (natural language)
       (saved to DataStore)
            │
            ├──► PlaylistView (UI)
-           ├──► Spotify Export
-           └──► Reflection Agent (background)
+           └──► Spotify Export
 ```
 
 ---
@@ -211,53 +206,7 @@ The Narrator has two distinct responsibilities:
 
 ---
 
-### 5. Concierge Agent
-
-**File:** `src/ui/components/chat-panel.js` + `src/agents/orchestrator.js`
-**Runs:** Always-on chat panel
-**Purpose:** Natural language interface to the entire pipeline, with cross-session memory.
-
-The Concierge is the user-facing conversational agent. It can:
-- Parse intents and trigger full playlist generation pipelines
-- Inject specific artists into the Compare screen for forced evaluation
-- Surface cross-session pattern insights ("You've been gravitating toward post-punk lately")
-- Extract and persist user facts to `agent_memories` (e.g., "doesn't like electronic music")
-
-**Agentic Memory:** The Concierge reads from three memory layers:
-- Episodic session summaries (last 20 sessions)
-- Drift trends (taste evolution over time)
-- Narrative anchors (the user's "music story" — first concerts, formative albums)
-
-Facts extracted from conversation are written back to `explicit_preferences.agent_memories` and read by the Scout and Curator on every subsequent pipeline run.
-
----
-
-### 6. Session DJ Agent
-
-**File:** `src/agents/session-dj-agent.js`
-**Runs:** Background, always active during a session
-**Purpose:** Real-time feedback loop — detects skip streaks and mood shifts.
-
-The Session DJ monitors track skip/listen events from the playlist player. When it detects 3+ consecutive skips, it triggers a "DJ intervention" modal with proposed adjustments (e.g., "Seems like you're not feeling the tempo — want me to shift toward something more driving?"). These adjustments are written to `session_signals` in the DataStore, which the Scout reads on the next pipeline run.
-
----
-
-### 7. Reflection Agent
-
-**File:** `src/agents/reflection-agent.js`
-**Runs:** Fire-and-forget on session end (hash change, page unload)
-**Purpose:** Extract durable knowledge from session behavior and persist it.
-
-After each session, the Reflection Agent processes the full event log — skips, listens, ratings, dismissed playlists — and writes structured updates to:
-- **Episodic memory:** A narrative summary of what happened ("Deep-dived into post-punk, skipped everything upbeat, rated Fontaines DC highest")
-- **Drift trends:** Moving average of taste dimension shifts
-- **Narrative anchors:** Extracts memorable "music story" moments from conversation
-
-This runs asynchronously and does not block the UI.
-
----
-
-### 8. Suggested Artists Agent
+### 5. Suggested Artists Agent
 
 **File:** `src/agents/suggested-artists.js`
 **Runs:** On Home page load (deferred, idle callback)
@@ -275,21 +224,6 @@ The Suggested Artists agent runs a three-layer research pipeline:
 After discovery, a **reason enrichment pass** rewrites the raw API-sourced labels ("fans also listen to X") into genuine music-critical blurbs using the LLM's world knowledge.
 
 Results are cached with a quality gate: if >40% of cached reasons are still generic boilerplate, the cache is silently revalidated in the background while the cached version shows instantly (stale-while-revalidate pattern).
-
----
-
-### 9. Cultural Scout
-
-**File:** `src/agents/cultural-scout.js`
-**Runs:** Pre-Scout phase in the pipeline (non-blocking)
-**Purpose:** Ground discovery in real-world context — events, press, community signals.
-
-The Cultural Scout uses the LLM's web grounding (Gemini's Google Search tool, or SearXNG for local) to find:
-- Artists with recent cultural momentum (new album, critical buzz)
-- Event-adjacent discoveries (touring with a favorite artist)
-- Community-validated connections (niche forum discussions)
-
-Its output is written to `blackboard.culturalIntelligence` and read by the Scout agent, which injects these artists into the candidate pool as `cultural_discovery` sources.
 
 ---
 

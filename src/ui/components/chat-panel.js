@@ -291,7 +291,19 @@ export class ChatPanel {
           const { NarratorAgent } = await import('../../agents/narrator-agent.js');
           const narrator = new NarratorAgent();
           const profile = await narrator.generateAgenticProfile(context.tasteState);
-          messagesEl.insertAdjacentHTML('beforeend', this._botBubble(`**Your Musical Vibe:**<br><br>${profile}`));
+          // profile is a structured object: { tagline, heroDescription, vibeAnalysis, dynamicTiers }
+          // Render it as readable chat prose, not a raw object
+          let profileText;
+          if (profile && typeof profile === 'object') {
+            const parts = [];
+            if (profile.tagline) parts.push(`🎵 **${profile.tagline}**`);
+            if (profile.heroDescription) parts.push(profile.heroDescription);
+            if (profile.vibeAnalysis) parts.push(profile.vibeAnalysis);
+            profileText = parts.join('<br><br>') || 'No profile data available yet — play some rounds in the Taste Game first!';
+          } else {
+            profileText = profile || 'No profile data available yet.';
+          }
+          messagesEl.insertAdjacentHTML('beforeend', this._botBubble(`**Your Musical Vibe:**<br><br>${profileText}`));
         } else if (actionableTypes.includes(action.type) && this.orchestrator) {
           try {
             const newContext = await this.orchestrator.handleConciergeAction(action);

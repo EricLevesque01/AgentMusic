@@ -107,17 +107,17 @@ export async function handleCallback() {
 
   if (error) {
     console.error('Spotify auth error:', error);
-    return false;
+    return error;
   }
 
   if (!code) {
-    return false; // Not a callback, normal page load
+    return 'no_code'; // Not a callback, normal page load
   }
 
   const verifier = sessionStorage.getItem(VERIFIER_KEY);
   if (!verifier) {
     console.error('No code verifier found. Please restart login.');
-    return false;
+    return 'missing_verifier';
   }
 
   try {
@@ -148,7 +148,7 @@ export async function handleCallback() {
     return true;
   } catch (err) {
     console.error('Token exchange failed:', err);
-    return false;
+    return err.message || 'unknown_error';
   }
 }
 

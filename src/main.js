@@ -85,8 +85,8 @@ async function init() {
         </div>
       </div>
     `;
-    const success = await handleCallback();
-    if (!success) {
+    const authResult = await handleCallback();
+    if (authResult !== true && authResult !== 'no_code') {
       if (isAuthenticated()) {
         // They probably just refreshed the ?code= callback page, and are already logged in.
         // Clean up the URL and continue loading the app.
@@ -96,7 +96,8 @@ async function init() {
           <div class="page" style="display:flex;align-items:center;justify-content:center;min-height:80vh;">
             <div class="glass-card" style="padding:var(--space-8);text-align:center;">
               <div style="font-size:2rem;margin-bottom:var(--space-4);">❌</div>
-              <p style="color:var(--text-secondary);margin-bottom:var(--space-4);">Connection failed or expired. Please try again.</p>
+              <p style="color:var(--text-secondary);margin-bottom:var(--space-2);">Connection failed or expired. Please try again.</p>
+              <p style="color:var(--text-accent);font-family:monospace;font-size:0.8rem;margin-bottom:var(--space-4);background:rgba(0,0,0,0.2);padding:var(--space-2);border-radius:4px;">Error: ${authResult}</p>
               <button class="btn btn-primary" onclick="location.href='/'">Retry Login</button>
             </div>
           </div>

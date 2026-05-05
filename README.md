@@ -326,12 +326,15 @@ localStorage (via DataStore)
 
 To run Agent Music locally, you **must** supply your own API keys. Because of Spotify's development mode restrictions and LLM token costs, there is no shared public key.
 
-#### 1. Spotify API Key
-Spotify requires all apps in Development Mode to explicitly allowlist users.
-1. Go to the [Spotify Developer Dashboard](https://developer.spotify.com/dashboard) and create an app.
-2. Under App Settings, set the **Redirect URI** to `http://127.0.0.1:5173/`.
-3. Click on **User Management** and add your Spotify email address (and any friends you want to test with, up to 25 users).
-4. Copy your **Client ID** — you will need it below.
+#### 1. Spotify Client ID
+Spotify requires you to create a Developer App to get an API key, and requires all apps in Development Mode to explicitly allowlist users.
+1. Go to the [Spotify Developer Dashboard](https://developer.spotify.com/dashboard) and log in.
+2. Click **Create app**.
+3. Fill in an App Name (e.g., "Agent Music Local") and App Description.
+4. Set the **Redirect URI** exactly to `http://127.0.0.1:5173/` (Do not use `localhost`).
+5. Under "APIs used", make sure **Web API** is checked, then save the app.
+6. Open your new app and click **Settings** to copy your **Client ID** (you do not need the Client Secret).
+7. Click on **User Management** and add the email address linked to your Spotify account. *If you skip this step, you will get a "User not registered" error when trying to log in.*
 
 #### 2. Gemini API Key (Optional if using Ollama)
 Agent Music uses Google's Gemini models by default because they are incredibly fast and offer a generous free tier.

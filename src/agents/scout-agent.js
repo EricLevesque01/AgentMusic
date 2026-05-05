@@ -595,11 +595,11 @@ You MUST call the 'submit_retrieval_plan' tool.`;
             const artist = await resolveArtist(artistName);
             if (!artist) return;
 
-            const tracks = await getTopTracks(artist.id, artist.name);
-            // Primary artist (first in list) gets up to 10 tracks;
-            // supporting artists get 2-3 for context.
+            // Primary artist gets more tracks; supporting artists get a few for context.
             const artistIndex = artistsToLookup.indexOf(artistName);
-            const trackLimit = (artistIndex === 0 && this._isSpecificRequest) ? 20 : (artistIndex === 0 ? 10 : 3);
+            const trackLimit = (artistIndex === 0 && this._isSpecificRequest) ? 20 : (artistIndex === 0 ? 12 : 4);
+            // Pass trackLimit into resolver — don't rely on the default-10 cap
+            const tracks = await getTopTracks(artist.id, artist.name, trackLimit);
             for (const track of tracks.slice(0, trackLimit)) {
               if (!seen.has(track.id)) {
                 seen.add(track.id);
@@ -679,7 +679,6 @@ You MUST call the 'submit_retrieval_plan' tool.`;
         }
       }
     } else {
-      if (onThought) onThought('Scout: Pulling adjacent artists from Last.fm graph (Hop-1)...');
       // Last.fm path (Gemini mode or embedding store not yet ready)
       for (const seed of seedArtists.slice(0, 3)) {
         const similar = await getSimilarArtists(seed.name, 10);

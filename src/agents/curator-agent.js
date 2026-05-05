@@ -438,9 +438,9 @@ Return ONLY valid JSON.`;
     playlist = this._verifyPlaylist(playlist, params, onThought);
 
     // --- Enforce minimum playable length ---
-    // We trust the LLM's judgment on length (e.g. returning 10 tight tracks instead of padding to 15),
-    // but we need a hard floor so the playlist isn't completely empty.
-    const hardFloor = 6;
+    // We trust the LLM's judgment on length, but enforce a hard floor so the
+    // playlist isn't embarrassingly short. 8 is the minimum viable demo length.
+    const hardFloor = 8;
     if (playlist.length < hardFloor) {
       const usedIds = new Set(playlist.map(c => c.track.id));
       const artistCounts = {};

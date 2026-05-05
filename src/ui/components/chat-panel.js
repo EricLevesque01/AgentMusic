@@ -3,7 +3,6 @@
  * Floating chat drawer powered by the Concierge Agent.
  * Available on all pages via a floating button.
  */
-import { ConciergeAgent } from '../../agents/concierge-agent.js';
 
 const SUGGESTIONS = [
   'What\'s my vibe?',
@@ -17,7 +16,7 @@ export class ChatPanel {
   constructor(orchestrator, getContext) {
     this.orchestrator = orchestrator;
     this.getContext   = getContext; // fn() → current PipelineContext
-    this.concierge    = new ConciergeAgent();
+    this.concierge    = null; // Removed ConciergeAgent
     this.isOpen       = false;
     this.container    = null;
     this.panel        = null;

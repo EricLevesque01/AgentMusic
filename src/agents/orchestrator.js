@@ -15,11 +15,9 @@
  */
 import { PipelineContext } from './pipeline-context.js';
 import { ProfilerAgent } from './profiler-agent.js';
-import { CulturalScout } from './cultural-scout.js';
 import { ScoutAgent } from './scout-agent.js';
 import { CuratorAgent } from './curator-agent.js';
 import { NarratorAgent } from './narrator-agent.js';
-import { ReflectionAgent } from './reflection-agent.js';
 import { UserModel } from './user-model.js';
 import { DataStore } from '../data/data-store.js';
 import { buildTasteBrief } from './taste-brief.js';
@@ -46,11 +44,9 @@ export class Orchestrator {
     this.statusCallback = statusCallback;
     this.thoughtCallback = thoughtCallback; // New callback for granular thoughts
     this.profiler       = new ProfilerAgent();
-    this.culturalScout  = new CulturalScout();
     this.scout          = new ScoutAgent();
     this.curator        = new CuratorAgent();
     this.narrator       = new NarratorAgent();
-    this.reflection     = new ReflectionAgent();
     this._lastContext = null;
   }
 
@@ -143,20 +139,7 @@ export class Orchestrator {
       context.tasteBrief = null;
     }
 
-    // --- Stage 1.5: CulturalScout — non-blocking web intelligence ---
-    // Runs AFTER profiler (needs taste data) and BEFORE Scout (feeds discoveries into pool).
-    // If it fails, pipeline continues with empty culturalIntelligence (graceful degradation).
-    this._reportStatus('cultural');
-    try {
-      await this.culturalScout.research(context, this._reportThought.bind(this));
-    } catch (culturalErr) {
-      console.warn('Orchestrator: CulturalScout failed (non-blocking):', culturalErr.message);
-      // Ensure fields exist even on failure
-      context.blackboard.culturalIntelligence = context.blackboard.culturalIntelligence || null;
-      context.currentEvents = context.currentEvents || [];
-    }
-
-    // --- Stage 2: Scout — reads coverageGaps + sessionSignals + culturalIntelligence ---
+    // --- Stage 2: Scout — reads coverageGaps + sessionSignals ---
     this._reportStatus('scout');
     context.validateForStage('scout');
     context.candidatePool = await this.scout.findCandidates(
@@ -388,16 +371,7 @@ export class Orchestrator {
 
       case 'taste_evolution': {
         // Surface cross-session taste evolution insights
-        // The Concierge agent synthesizes drift trends + episodic memory
-        try {
-          const { ConciergeAgent } = await import('./concierge-agent.js');
-          const concierge = new ConciergeAgent();
-          const summary = concierge.buildTasteEvolutionSummary();
-          return { ...(this._lastContext || {}), tasteEvolution: summary };
-        } catch (e) {
-          console.warn('Orchestrator: Taste evolution summary failed:', e.message);
-        }
-        break;
+        return { ...(this._lastContext || {}), tasteEvolution: "Taste evolution summary is currently offline." };
       }
 
       case 'adjust_preference':

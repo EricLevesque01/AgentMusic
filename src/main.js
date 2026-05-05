@@ -1,7 +1,7 @@
 /**
  * Agent Music — Main Entry Point & Router
  * Hash-based SPA router with Spotify OAuth callback handling.
- * Mounts global: ChatPanel (Concierge) + SessionDJAgent
+ * Mounts global: ChatPanel
  */
 import './style.css';
 import { createNavBar, updateNavActive } from './ui/components/nav-bar.js';
@@ -13,7 +13,7 @@ import { renderLoginScreen } from './ui/components/login-screen.js';
 import { ChatPanel } from './ui/components/chat-panel.js';
 import { handleCallback, isAuthenticated, clearTokens } from './auth/spotify-auth.js';
 import { Orchestrator } from './agents/orchestrator.js';
-import { SessionDJAgent } from './agents/session-dj-agent.js';
+
 import { PlaylistScheduler } from './agents/playlist-scheduler.js';
 import { DataStore } from './data/data-store.js';
 
@@ -112,12 +112,7 @@ async function init() {
     const orchestrator = new Orchestrator();
     window.TG.orchestrator = orchestrator;
 
-    // Session DJ Agent
-    const dj = new SessionDJAgent(async (adjustments, lastCandidate) => {
-      // DJ intervention: show modal and trigger partial re-rank
-      showDJModal(adjustments, orchestrator);
-    });
-    window.TG.dj = dj;
+
 
     // Mount Concierge Chat Panel
     const chatPanel = new ChatPanel(

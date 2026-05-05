@@ -1,5 +1,5 @@
 /**
- * TasteGraph — Agent Isolation Tests (Sprint 1.4)
+ * Agent Music — Agent Isolation Tests (Sprint 1.4)
  *
  * These tests enforce the CONTEXT CONTRACT:
  * - Agents must read pre-loaded data from context.*, not call DataStore/UserModel directly

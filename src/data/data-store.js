@@ -1,5 +1,5 @@
 /**
- * TasteGraph — Data Store
+ * Agent Music — Data Store
  * localStorage persistence layer with TTL-based caching.
  */
 
@@ -64,7 +64,7 @@ export class DataStore {
   }
 
   /**
-   * Clear all TasteGraph data from localStorage.
+   * Clear all Agent Music data from localStorage.
    */
   static clearAll() {
     const keys = [];

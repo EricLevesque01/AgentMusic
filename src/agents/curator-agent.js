@@ -1,5 +1,5 @@
 /**
- * TasteGraph — Curator Agent
+ * Agent Music — Curator Agent
  * "The Editor" — Scores, ranks, and assembles the final playlist.
  *
  * Perceives: CandidatePool, TasteState, sliders, sessionAdjustments

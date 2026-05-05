@@ -1,5 +1,5 @@
 /**
- * TasteGraph — Vertical Sidebar Navigation
+ * Agent Music — Vertical Sidebar Navigation
  * "Deep Space Pro" — replaces bottom nav with a fixed left sidebar.
  * Renders both a desktop sidebar AND a mobile bottom nav from the same data.
  */
@@ -62,7 +62,7 @@ export function createNavBar() {
     </nav>
 
     <div class="sidebar-footer" style="display:flex; flex-direction: column; gap: var(--space-2);">
-      <button class="nav-item" onclick="window.tastegraphLogout && window.tastegraphLogout()" aria-label="Sign out" style="padding: var(--space-2) var(--space-3); color: var(--text-muted); font-size: var(--font-size-xs);">
+      <button class="nav-item" onclick="window.agentmusicLogout && window.agentmusicLogout()" aria-label="Sign out" style="padding: var(--space-2) var(--space-3); color: var(--text-muted); font-size: var(--font-size-xs);">
         <span class="nav-icon-svg" style="width: 14px; height: 14px; margin-right: 8px;">
           <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
             <path d="M6 2H3a1 1 0 00-1 1v10a1 1 0 001 1h3M10 11l3-3-3-3M13 8H6"/>
@@ -112,7 +112,7 @@ export function createNavBar() {
   requestAnimationFrame(() => _updateDiscoverBadge());
 
   // Keep badge live as the scheduler generates playlists
-  window.addEventListener('tastegraph:library-updated', _updateDiscoverBadge);
+  window.addEventListener('agentmusic:library-updated', _updateDiscoverBadge);
 
   return frag;
 }

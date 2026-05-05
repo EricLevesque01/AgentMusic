@@ -166,7 +166,7 @@ export function renderPlaylistPage(container) {
           
           const user = await getCurrentUser();
           const uris = p.context.scoredPlaylist.map(c => `spotify:track:${c.track.id}`);
-          const pl = await createPlaylist(user.id, `TasteGraph: ${new Date().toLocaleDateString()}`, p.context.playlistSummary || 'TasteGraph Curated Mix');
+          const pl = await createPlaylist(user.id, `Agent Music: ${new Date().toLocaleDateString()}`, p.context.playlistSummary || 'Agent Music Curated Mix');
           await addTracksToPlaylist(pl.id, uris);
           
           DataStore.markPlaylistSavedToSpotify(id);
@@ -184,7 +184,7 @@ export function renderPlaylistPage(container) {
 
   renderLibrary();
 
-  window.addEventListener('tastegraph:playlist-updated', () => {
+  window.addEventListener('agentmusic:playlist-updated', () => {
     const ctx = window.TG?.lastContext;
     if (ctx) {
       playlistView.render(ctx);
@@ -221,7 +221,7 @@ export function renderPlaylistPage(container) {
       
       // Save it to library (populates both playlist_library and legacy saved_playlists)
       DataStore.saveToLibrary(context, vibe, 'manual');
-      window.dispatchEvent(new CustomEvent('tastegraph:playlist-updated'));
+      window.dispatchEvent(new CustomEvent('agentmusic:playlist-updated'));
       
       playlistView.render(context);
       generatorSection.style.display = 'none';

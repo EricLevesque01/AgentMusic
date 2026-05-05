@@ -1,5 +1,5 @@
 /**
- * TasteGraph — Wikidata API Wrapper
+ * Agent Music — Wikidata API Wrapper
  * Queries the Wikidata SPARQL endpoint for artist influence relationships (P737).
  * Used by SuggestedArtistsAgent and the enhanced Scout for non-trivial discovery.
  *
@@ -23,7 +23,7 @@ async function wdFetch(sparql) {
     headers: {
       'Accept': 'application/sparql-results+json',
       'Content-Type': 'application/x-www-form-urlencoded',
-      'User-Agent': 'TasteGraph/1.0 (ericlevesque22@gmail.com)',
+      'User-Agent': 'Agent Music/1.0 (ericlevesque22@gmail.com)',
     },
     body: 'query=' + encodeURIComponent(sparql),
   });

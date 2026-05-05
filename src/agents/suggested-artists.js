@@ -1,5 +1,5 @@
 /**
- * TasteGraph — Suggested Artists Agent
+ * Agent Music — Suggested Artists Agent
  * Uses all three knowledge layers to surface non-obvious discovery candidates:
  *   Layer 1: Structured APIs (Last.fm similar, MusicBrainz relationships, Wikidata influences)
  *   Layer 2: LLM world knowledge (shared producers, scenes, sonic DNA)

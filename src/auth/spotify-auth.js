@@ -1,5 +1,5 @@
 /**
- * TasteGraph — Spotify OAuth 2.0 PKCE Flow
+ * Agent Music — Spotify OAuth 2.0 PKCE Flow
  * 
  * Adapted from the EchoDJ project's spotify-auth.ts.
  * Pure client-side PKCE (no server-side route needed for Vite dev server
@@ -20,7 +20,7 @@ const REDIRECT_URI = typeof window !== 'undefined'
   ? `${window.location.protocol}//${window.location.host}/`
   : 'http://127.0.0.1:5173/';
 
-// Scopes needed for TasteGraph
+// Scopes needed for Agent Music
 const SCOPES = [
   'user-top-read',             // Top artists/tracks for Profiler
   'user-read-recently-played', // Novelty filter

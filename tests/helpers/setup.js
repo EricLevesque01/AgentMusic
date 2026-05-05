@@ -1,5 +1,5 @@
 /**
- * TasteGraph — Test Setup (imported by vitest.config or individual test files)
+ * Agent Music — Test Setup (imported by vitest.config or individual test files)
  *
  * Provides:
  *   1. localStorage polyfill for Node.js (silences DataStore warnings)

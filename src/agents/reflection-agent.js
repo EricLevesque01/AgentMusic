@@ -1,5 +1,5 @@
 /**
- * TasteGraph — Reflection Agent
+ * Agent Music — Reflection Agent
  * "The Learner" — Runs at session end to distill short-term signals into long-term memory.
  *
  * Perceives: Session DJ data (skip/listen history), pipeline context, UserModel Tier 3

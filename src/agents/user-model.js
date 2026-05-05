@@ -1,5 +1,5 @@
 /**
- * TasteGraph — Shared User Model
+ * Agent Music — Shared User Model
  * The SINGLE SOURCE OF TRUTH about the user across all agents.
  *
  * Three-tier architecture:

@@ -1,5 +1,5 @@
 /**
- * TasteGraph — Preference Rating Engine
+ * Agent Music — Preference Rating Engine
  *
  * Implements two rating models for the Compare game:
  *

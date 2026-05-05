@@ -1,5 +1,5 @@
 /**
- * TasteGraph — Sprint 4 Tests
+ * Agent Music — Sprint 4 Tests
  * Tests for: Proactive Opening Message, Conversational Continuity
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest';

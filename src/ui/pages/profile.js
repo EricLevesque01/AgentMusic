@@ -1,5 +1,5 @@
 /**
- * TasteGraph — Profile Page (placeholder, built out in Phase 8)
+ * Agent Music — Profile Page (placeholder, built out in Phase 8)
  */
 import { ProfileView } from '../components/profile-view.js';
 

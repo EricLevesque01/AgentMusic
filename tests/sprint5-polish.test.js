@@ -1,5 +1,5 @@
 /**
- * TasteGraph — Sprint 5 Tests
+ * Agent Music — Sprint 5 Tests
  * E2E pipeline contract verification: the full Sprint 3 + 4 integration chain.
  *
  * Test strategy: we use source-level assertions (reading source files) for

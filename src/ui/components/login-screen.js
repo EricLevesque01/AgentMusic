@@ -1,5 +1,5 @@
 /**
- * TasteGraph — Login Screen
+ * Agent Music — Login Screen
  */
 import { redirectToSpotifyLogin } from '../../auth/spotify-auth.js';
 

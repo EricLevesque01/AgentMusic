@@ -1,5 +1,5 @@
 /**
- * TasteGraph — Genre Taxonomy
+ * Agent Music — Genre Taxonomy
  * Maps fragmented, crowdsourced micro-genres (from Last.fm/Spotify) into 
  * standardized macro-genres for analytics and UI visualization.
  */

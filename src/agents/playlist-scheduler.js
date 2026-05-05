@@ -1,5 +1,5 @@
 /**
- * TasteGraph — Playlist Scheduler
+ * Agent Music — Playlist Scheduler
  * Proactively generates playlists in the background so users always have
  * fresh, curated content waiting. Uses the UserModel to generate intelligent
  * intent seeds rather than generic prompts.
@@ -107,7 +107,7 @@ export class PlaylistScheduler {
       DataStore.save('playlist_library', fresh);
       console.log(`PlaylistScheduler: Purged ${before - fresh.length} stale playlist(s)`);
       if (typeof window !== 'undefined') {
-        window.dispatchEvent(new CustomEvent('tastegraph:library-updated'));
+        window.dispatchEvent(new CustomEvent('agentmusic:library-updated'));
       }
     }
   }
@@ -153,7 +153,7 @@ export class PlaylistScheduler {
 
           // Dispatch event so UI can update if visible
           if (typeof window !== 'undefined') {
-            window.dispatchEvent(new CustomEvent('tastegraph:library-updated'));
+            window.dispatchEvent(new CustomEvent('agentmusic:library-updated'));
           }
         } catch (err) {
           console.warn(`PlaylistScheduler: Failed to generate "${seed.intent}":`, err.message);

@@ -1,8 +1,8 @@
-# TasteGraph — Agentic Music Discovery Engine
+# Agent Music — Agentic Music Discovery Engine
 
 > **A multi-agent AI system that learns your musical taste through active comparison and delivers intelligent, context-aware playlist curation.**
 
-TasteGraph is a fully client-side web application built on a pipeline of cooperating AI agents. Rather than relying on a single monolithic model, each agent in the system is purpose-built for a narrow task — and routed to the language model best suited to that task. The system learns from every interaction: comparisons, skips, listening history, and natural language conversation all flow back into a shared taste representation that gets smarter over time.
+Agent Music is a fully client-side web application built on a pipeline of cooperating AI agents. Rather than relying on a single monolithic model, each agent in the system is purpose-built for a narrow task — and routed to the language model best suited to that task. The system learns from every interaction: comparisons, skips, listening history, and natural language conversation all flow back into a shared taste representation that gets smarter over time.
 
 ---
 
@@ -295,7 +295,7 @@ Its output is written to `blackboard.culturalIntelligence` and read by the Scout
 
 ## LLM Selection Rationale
 
-TasteGraph supports two LLM backends: **Gemini** (cloud, default) and **Ollama** (local). Each agent is routed to the model that best matches its task profile.
+Agent Music supports two LLM backends: **Gemini** (cloud, default) and **Ollama** (local). Each agent is routed to the model that best matches its task profile.
 
 ### Gemini (Cloud Default)
 

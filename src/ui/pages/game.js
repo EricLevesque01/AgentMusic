@@ -1,7 +1,7 @@
 import { TasteGame } from '../components/taste-game.js';
 
 /**
- * TasteGraph — Game Page
+ * Agent Music — Game Page
  */
 export function renderGamePage(container) {
   container.innerHTML = `

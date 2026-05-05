@@ -1,5 +1,5 @@
 /**
- * TasteGraph — Track Resolver
+ * Agent Music — Track Resolver
  * Resilient, agentic track resolution with multi-source fallback.
  *
  * Three retrieval modes:

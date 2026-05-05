@@ -28,7 +28,7 @@ export async function initSpotifyPlayer() {
       }
       
       player = new window.Spotify.Player({
-        name: 'TasteGraph Web Player',
+        name: 'Agent Music Web Player',
         getOAuthToken: cb => { cb(token); },
         volume: 0.5
       });
@@ -36,7 +36,7 @@ export async function initSpotifyPlayer() {
       player.addListener('ready', ({ device_id }) => {
         deviceId = device_id;
         isReady = true;
-        console.log('TasteGraph Web Player Ready with Device ID', device_id);
+        console.log('Agent Music Web Player Ready with Device ID', device_id);
         resolve();
       });
 

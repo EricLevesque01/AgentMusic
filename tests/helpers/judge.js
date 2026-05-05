@@ -1,5 +1,5 @@
 /**
- * TasteGraph — Shared LLM Judge
+ * Agent Music — Shared LLM Judge
  *
  * Single source of truth for all LLM-as-Judge evaluation logic.
  * Uses Gemini Flash with exponential backoff and graceful degradation.
@@ -42,7 +42,7 @@ export async function llmJudge(text, rubric, { maxRetries = 5, timeoutMs = 30000
         headers: { 'Content-Type': 'application/json' },
         signal: AbortSignal.timeout(timeoutMs),
         body: JSON.stringify({
-          system_instruction: { parts: [{ text: `You are an expert evaluator for a multi-agent music recommendation AI called TasteGraph. Be strict — only give 5 for truly exceptional output. Respond ONLY with valid JSON.` }] },
+          system_instruction: { parts: [{ text: `You are an expert evaluator for a multi-agent music recommendation AI called Agent Music. Be strict — only give 5 for truly exceptional output. Respond ONLY with valid JSON.` }] },
           contents: [{ role: 'user', parts: [{ text: `RUBRIC:\n${rubric}\n\nTEXT TO EVALUATE:\n"""\n${text}\n"""\n\nScore 1-5 on the rubric. Return ONLY: {"score": <1-5>, "reasoning": "<brief>"}` }] }],
           generationConfig: { temperature: 0.1, maxOutputTokens: 300 },
         }),

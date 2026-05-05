@@ -1,5 +1,5 @@
 /**
- * TasteGraph — Profiler Agent
+ * Agent Music — Profiler Agent
  * "Who You Are" — Builds and maintains the user's taste identity.
  * 
  * Perceives: Spotify history, Elo ratings, past session patterns

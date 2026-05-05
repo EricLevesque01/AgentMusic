@@ -1,5 +1,5 @@
 /**
- * TasteGraph — Scout Agent
+ * Agent Music — Scout Agent
  * "What's Out There" — Discovers candidate tracks by traversing the music graph.
  *
  * Perceives: TasteState (Elo rankings, top genres), session intent

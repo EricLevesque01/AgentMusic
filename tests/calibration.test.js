@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 /**
- * TasteGraph — Calibration & Artist Search Tests
+ * Agent Music — Calibration & Artist Search Tests
  * Tests the Beli-style binary search calibration system and edge cases
  * for the "Add artist to game" feature.
  *

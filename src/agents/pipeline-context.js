@@ -1,5 +1,5 @@
 /**
- * TasteGraph — Pipeline Context
+ * Agent Music — Pipeline Context
  * Shared data object that flows through the agent pipeline.
  * All agents read from and write to this context.
  */

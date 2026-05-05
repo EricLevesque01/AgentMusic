@@ -1,5 +1,5 @@
 /**
- * TasteGraph — Agent Status Component
+ * Agent Music — Agent Status Component
  * ChatGPT-style "thinking" display that shows the logical steps
  * agents are making in plain, user-friendly language.
  *

@@ -1,5 +1,5 @@
 /**
- * TasteGraph — Local Embedding Store
+ * Agent Music — Local Embedding Store
  *
  * Uses @xenova/transformers (Transformers.js) to run the all-MiniLM-L6-v2
  * embedding model entirely in-browser via ONNX Runtime (WebAssembly).

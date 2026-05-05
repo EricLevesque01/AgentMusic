@@ -1,5 +1,5 @@
 /**
- * TasteGraph — Last.fm API Wrapper
+ * Agent Music — Last.fm API Wrapper
  * Used by the Scout Agent for similar artists and genre tags.
  *
  * API Key loaded from .env (VITE_LASTFM_API_KEY)

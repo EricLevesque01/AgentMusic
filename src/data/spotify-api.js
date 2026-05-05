@@ -1,6 +1,6 @@
 /**
- * TasteGraph — Spotify API Wrapper
- * Wraps the Spotify Web API endpoints needed by TasteGraph agents.
+ * Agent Music — Spotify API Wrapper
+ * Wraps the Spotify Web API endpoints needed by Agent Music agents.
  */
 import { getValidAccessToken, refreshAccessToken } from '../auth/spotify-auth.js';
 

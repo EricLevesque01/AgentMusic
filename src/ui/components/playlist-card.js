@@ -1,5 +1,5 @@
 /**
- * TasteGraph — Playlist Card Component
+ * Agent Music — Playlist Card Component
  * Glassmorphic card for the discovery feed grid.
  * Shows title, track count, curator reflection, and a "NEW" badge for unlistened playlists.
  */

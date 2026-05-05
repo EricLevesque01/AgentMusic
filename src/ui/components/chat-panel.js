@@ -1,5 +1,5 @@
 /**
- * TasteGraph — Chat Panel Component
+ * Agent Music — Chat Panel Component
  * Floating chat drawer powered by the Concierge Agent.
  * Available on all pages via a floating button.
  */
@@ -281,10 +281,10 @@ export class ChatPanel {
       const actionableTypes = ['boost_genre', 'penalize_genre', 'regenerate', 'create_playlist', 'adjust_preference'];
       for (const action of actions) {
         if (action.type === 'remember_fact') {
-          window.dispatchEvent(new CustomEvent('tastegraph:remember-fact', { detail: action.fact }));
+          window.dispatchEvent(new CustomEvent('agentmusic:remember-fact', { detail: action.fact }));
           messagesEl.insertAdjacentHTML('beforeend', this._botBubble(`🧠 Saved to your permanent Profile Preferences.`, true));
         } else if (action.type === 'suggest_artists') {
-          window.dispatchEvent(new CustomEvent('tastegraph:inject-artists', { detail: action.artists }));
+          window.dispatchEvent(new CustomEvent('agentmusic:inject-artists', { detail: action.artists }));
           messagesEl.insertAdjacentHTML('beforeend', this._botBubble(`🎸 I've injected **${action.artists.join(', ')}** into your comparison queue! Play the next round to evaluate my picks.`, true));
         } else if (action.type === 'summarize_taste') {
           messagesEl.insertAdjacentHTML('beforeend', this._botBubble(`*Generating Sonic Dossier...*`, true));
@@ -314,7 +314,7 @@ export class ChatPanel {
               DataStore.saveToLibrary(newContext, action.theme || 'Concierge Curated Mix', 'concierge');
             }
             
-            window.dispatchEvent(new CustomEvent('tastegraph:playlist-updated'));
+            window.dispatchEvent(new CustomEvent('agentmusic:playlist-updated'));
             messagesEl.insertAdjacentHTML('beforeend', this._botBubble('✅ Action completed!', true));
           } catch (e) {
             messagesEl.insertAdjacentHTML('beforeend', this._botBubble('⚠️ Couldn\'t update — try generating a playlist first.', true));

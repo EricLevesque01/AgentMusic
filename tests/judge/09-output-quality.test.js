@@ -1,5 +1,5 @@
 /**
- * TasteGraph — Suite 9: Output Quality Review
+ * Agent Music — Suite 9: Output Quality Review
  *
  * Covers the four pillars the user cares about:
  *   1. Track count sanity    — does the count make sense for the intent?

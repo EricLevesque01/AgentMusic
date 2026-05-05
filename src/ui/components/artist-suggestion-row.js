@@ -1,5 +1,5 @@
 /**
- * TasteGraph — Artist Suggestion Row Component
+ * Agent Music — Artist Suggestion Row Component
  * Horizontal scroll row of circular artist cards with discovery reasons.
  * Each card shows: image, name, and the non-obvious connection reason.
  * Click → action modal: Add to Compare / Build playlist / Dismiss.

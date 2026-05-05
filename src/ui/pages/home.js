@@ -1,5 +1,5 @@
 /**
- * TasteGraph — Home Page (Agentic Spotify Discovery Feed)
+ * Agent Music — Home Page (Agentic Spotify Discovery Feed)
  * Spotify-style grid of pre-generated playlists + suggested artists row.
  * The primary discovery surface — users see curated content immediately.
  */
@@ -429,7 +429,7 @@ export function renderHomePage(container) {
 
       case 'compare':
         if (typeof window !== 'undefined' && artist.spotifyId) {
-          window.dispatchEvent(new CustomEvent('tastegraph:inject-artists', {
+          window.dispatchEvent(new CustomEvent('agentmusic:inject-artists', {
             detail: [artist.name],
           }));
           location.hash = '#/game';
@@ -541,11 +541,11 @@ export function renderHomePage(container) {
     renderGrid();
     renderStats();
   };
-  window.addEventListener('tastegraph:library-updated', libraryHandler);
+  window.addEventListener('agentmusic:library-updated', libraryHandler);
 
   // Listen for profiler warm-up completion — retry suggestions if the first attempt
   // found no artists (fresh login before top_artists was cached)
-  window.addEventListener('tastegraph:profile-ready', () => {
+  window.addEventListener('agentmusic:profile-ready', () => {
     if (!suggestionContainer.querySelector('.suggestion-card')) {
       loadSuggestions();
     }

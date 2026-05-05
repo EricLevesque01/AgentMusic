@@ -1,5 +1,5 @@
 /**
- * TasteGraph — MusicBrainz API Wrapper
+ * Agent Music — MusicBrainz API Wrapper
  * Used by the Scout Agent for genre metadata and artist relationships.
  *
  * Contact: ericlevesque22@gmail.com (from EchoDJ project)
@@ -10,7 +10,7 @@
 import { DataStore } from './data-store.js';
 
 const MB_BASE       = 'https://musicbrainz.org/ws/2/';
-const MB_USER_AGENT = 'TasteGraph/1.0 (ericlevesque22@gmail.com)';
+const MB_USER_AGENT = 'Agent Music/1.0 (ericlevesque22@gmail.com)';
 
 // Rate limiter: MusicBrainz allows max 1 req/sec
 let lastRequestTime = 0;

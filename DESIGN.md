@@ -1,4 +1,4 @@
-# TasteGraph (AgentMusic) Design Architecture
+# Agent Music (AgentMusic) Design Architecture
 
 ## LLM Model Routing Strategy
 

@@ -1,5 +1,5 @@
 /**
- * TasteGraph — Cultural Scout Agent (Sprint 2)
+ * Agent Music — Cultural Scout Agent (Sprint 2)
  * "What's the World Saying?" — A dedicated agent for web-aware cultural intelligence.
  *
  * Runs BEFORE the Scout in the pipeline. Its job is to answer:

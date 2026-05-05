@@ -1,5 +1,5 @@
 /**
- * TasteGraph — Local ReAct Agent
+ * Agent Music — Local ReAct Agent
  *
  * Implements a proper tool-calling ReAct loop using Ollama's native
  * /api/chat tools API (no prompt injection, no framework needed).

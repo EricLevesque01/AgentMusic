@@ -1,5 +1,5 @@
 /**
- * TasteGraph — SearXNG Search API
+ * Agent Music — SearXNG Search API
  *
  * Provides a local web search capability for agents running on Ollama.
  * Replaces Gemini's google_search grounding when in local mode.

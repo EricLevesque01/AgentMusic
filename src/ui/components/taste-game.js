@@ -1,5 +1,5 @@
 /**
- * TasteGraph — Taste Game Component
+ * Agent Music — Taste Game Component
  *
  * Artist pool strategy:
  *   1. User's top 50 Spotify artists (sorted by listen frequency)
@@ -126,7 +126,7 @@ export class TasteGame {
     this.EXPANSION_INTERVAL_TOP = 10;   // expand pool from top favorites every N rounds
 
     // Listen for LLM injections
-    window.addEventListener('tastegraph:inject-artists', async (e) => {
+    window.addEventListener('agentmusic:inject-artists', async (e) => {
       const names = e.detail;
       const newArtists = [];
       for (const name of names) {

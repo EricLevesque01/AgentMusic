@@ -1,5 +1,5 @@
 /**
- * TasteGraph — Session DJ Agent
+ * Agent Music — Session DJ Agent
  * "The Vibe Check" — Adapts the playlist in real-time based on skip patterns.
  *
  * Perceives:  Skip events, listen duration, explicit feedback buttons

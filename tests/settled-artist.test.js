@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 /**
- * TasteGraph — Settled Artist & Coverage Tests
+ * Agent Music — Settled Artist & Coverage Tests
  *
  * Covers the core bug: settled artists (e.g. Jeff Buckley at #1 after 10+ wins)
  * kept appearing in every round even when they had nothing left to learn from.

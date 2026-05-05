@@ -1,5 +1,5 @@
 /**
- * TasteGraph — Narrator Agent
+ * Agent Music — Narrator Agent
  * "The Storyteller" — Explains why every track was chosen.
  *
  * Perceives: ScoredPlaylist, TasteState, sliders

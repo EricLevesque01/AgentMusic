@@ -1,5 +1,5 @@
 /**
- * TasteGraph — Wikipedia API
+ * Agent Music — Wikipedia API
  * Fetches Wikipedia summaries to provide deep historical and biographical context 
  * to the Agents, serving as a dynamic RAG (Retrieval-Augmented Generation) Brain.
  */
@@ -37,7 +37,7 @@ export async function getArtistWikiSummary(artistName) {
     // Wikipedia requires a User-Agent or it may reject/redirect the request
     const response = await fetch(url.toString(), {
       headers: {
-        'User-Agent': 'TasteGraph_Agentic_Curator/1.0 (test@example.com)'
+        'User-Agent': 'Agent Music_Agentic_Curator/1.0 (test@example.com)'
       }
     });
 

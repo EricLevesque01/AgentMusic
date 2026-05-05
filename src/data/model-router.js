@@ -1,5 +1,5 @@
 /**
- * TasteGraph — Model Router
+ * Agent Music — Model Router
  *
  * Maps each agent to its optimal local model based on deep research findings:
  *   - Qwen3 8B: best generalist for agentic/tool-calling tasks (Scout, Curator, Suggested Artists)

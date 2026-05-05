@@ -1,5 +1,5 @@
 /**
- * TasteGraph — Main Entry Point & Router
+ * Agent Music — Main Entry Point & Router
  * Hash-based SPA router with Spotify OAuth callback handling.
  * Mounts global: ChatPanel (Concierge) + SessionDJAgent
  */
@@ -54,7 +54,7 @@ function navigate() {
   }
 }
 
-window.tastegraphLogout = function () {
+window.agentmusicLogout = function () {
   clearTokens();
   if (window.TG?.dj) window.TG.dj.reset();
   navigate();
@@ -143,11 +143,11 @@ async function init() {
           const { ProfilerAgent } = await import('./agents/profiler-agent.js');
           const profiler = new ProfilerAgent();
           await profiler.buildTasteState();
-          console.info('TasteGraph: Background profiler warm-up complete.');
+          console.info('Agent Music: Background profiler warm-up complete.');
           // Refresh the Home page suggestions now that data is available
-          window.dispatchEvent(new CustomEvent('tastegraph:profile-ready'));
+          window.dispatchEvent(new CustomEvent('agentmusic:profile-ready'));
         } catch (e) {
-          console.warn('TasteGraph: Background profiler warm-up failed.', e.message);
+          console.warn('Agent Music: Background profiler warm-up failed.', e.message);
         }
       }, 200);
     }
@@ -189,7 +189,7 @@ async function init() {
   });
 
   // Set up memory extraction event
-  window.addEventListener('tastegraph:remember-fact', (e) => {
+  window.addEventListener('agentmusic:remember-fact', (e) => {
     const fact = e.detail;
     if (fact) {
       const prefs = DataStore.getExplicitPreferences();
@@ -255,7 +255,7 @@ function showDJModal(adjustments, orchestrator) {
         try {
           const ctx = await orchestrator.rerank(adjustments);
           window.TG.lastContext = ctx;
-          window.dispatchEvent(new CustomEvent('tastegraph:playlist-updated'));
+          window.dispatchEvent(new CustomEvent('agentmusic:playlist-updated'));
         } catch (err) {
           console.warn('DJ re-rank failed:', err.message);
         }

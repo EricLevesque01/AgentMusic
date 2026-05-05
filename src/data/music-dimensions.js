@@ -1,5 +1,5 @@
 /**
- * TasteGraph — Music Dimensions
+ * Agent Music — Music Dimensions
  *
  * Implements the MUSIC model (Rentfrow, Goldberg & Levitin, 2011) for
  * computing psychometric taste profiles from genre metadata.

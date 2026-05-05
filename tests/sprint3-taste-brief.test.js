@@ -1,5 +1,5 @@
 /**
- * TasteGraph — Sprint 3 Tests
+ * Agent Music — Sprint 3 Tests
  * Tests for: Taste DNA Brief, Selection Thesis, Narrator Enrichment, Anti-Repetition
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest';

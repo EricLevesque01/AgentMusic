@@ -1,5 +1,5 @@
 /**
- * TasteGraph — Playlist View Component
+ * Agent Music — Playlist View Component
  * Track list with audio previews and Session DJ integration.
  */
 

@@ -1,5 +1,5 @@
 /**
- * TasteGraph — Taste DNA Brief (Sprint 3.1)
+ * Agent Music — Taste DNA Brief (Sprint 3.1)
  * A centralized, structured snapshot of the user's musical identity.
  *
  * Every agent was independently building ad-hoc context snippets from

@@ -1,5 +1,5 @@
 /**
- * TasteGraph — Shared Test Fixtures
+ * Agent Music — Shared Test Fixtures
  *
  * Canonical taste profiles and pipeline runners used by all judge suites.
  * No mocks — these represent realistic user states for integration testing.

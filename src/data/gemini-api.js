@@ -1,5 +1,5 @@
 /**
- * TasteGraph — LLM API Wrapper
+ * Agent Music — LLM API Wrapper
  * Supports Gemini (cloud) and Ollama (local) backends.
  *
  * Backend selection:

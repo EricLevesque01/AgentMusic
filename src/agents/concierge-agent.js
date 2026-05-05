@@ -1,5 +1,5 @@
 /**
- * TasteGraph — Concierge Agent
+ * Agent Music — Concierge Agent
  * "The Natural Language Interface" — Parses user chat into structured pipeline actions.
  *
  * Perceives:  User message, current PipelineContext (tasteState, sliders, playlist),
@@ -481,7 +481,7 @@ export class ConciergeAgent {
 
     return `${buildSoulPrefix()}
 
-You are acting as the Concierge — the conversational interface of TasteGraph.
+You are acting as the Concierge — the conversational interface of Agent Music.
 
 YOUR KNOWLEDGE OF THE SYSTEM:
 You are part of a team of specialized agents:

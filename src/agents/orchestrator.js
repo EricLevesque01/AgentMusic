@@ -1,5 +1,5 @@
 /**
- * TasteGraph — Orchestrator
+ * Agent Music — Orchestrator
  * Coordinates the full pipeline: Profiler → Scout → Curator
  * The Curator now produces all playlist metadata (reasons, summary, title)
  * directly, eliminating the redundant Narrator stage.
@@ -372,7 +372,7 @@ export class Orchestrator {
       case 'suggest_artists':
         // Dispatch event to inject artists into the Taste Game pool
         if (typeof window !== 'undefined' && action.artists?.length) {
-          window.dispatchEvent(new CustomEvent('tastegraph:inject-artists', { detail: action.artists }));
+          window.dispatchEvent(new CustomEvent('agentmusic:inject-artists', { detail: action.artists }));
         }
         break;
 

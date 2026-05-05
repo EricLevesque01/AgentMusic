@@ -326,7 +326,7 @@ PERSONALIZATION RULES FOR PER-TRACK REASONS:
 OUTPUT FORMAT:
 Return a single JSON object:
 {
-  "playlistName": "A creative, evocative 2-6 word title for this playlist",
+  "playlistName": "A creative, evocative 2-6 word title. BANNED CLICHÉ WORDS: 'Velvet', 'Neon', 'Vibes', 'Sonic', 'Midnight', 'Echoes', 'Journey'. Use striking, specific imagery.",
   "playlistSummary": "One compelling sentence describing the playlist's emotional arc and sonic identity.",
   "reflection": "Your selection THESIS first (arc, discovery ratio, exclusions), then 2-3 sentences analyzing tradeoffs.",
   "playlist": [

@@ -49,17 +49,18 @@ User Intent (natural language)
 ┌─────────────────────────────────────────────────┐
 │              Orchestrator                        │
 │  (coordinates pipeline, owns PipelineContext)    │
-└────┬──────────┬──────────┬──────────────────────┘
-     │          │          │
-     ▼          ▼          ▼
-┌─────────┐ ┌────────┐
-│Profiler │ │ Scout  │
-│  Agent  │ │ Agent  │
-└────┬────┘ └───┬────┘
-     │          │
-     │    CandidatePool
-     │          │
-     ▼          ▼
+└────┬──────────────────┬─────────────────────────┘
+     │                  │
+     ▼                  ▼
+┌─────────┐        ┌────────┐
+│Profiler │        │ Scout  │
+│  Agent  │        │ Agent  │
+└────┬────┘        └───┬────┘
+     │                 │
+     │           CandidatePool
+     │                 │
+     └────────┬────────┘
+              ▼
 ┌──────────────────────┐
 │    Curator Agent      │
 │  (intent + selection) │

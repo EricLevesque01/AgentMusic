@@ -217,21 +217,36 @@ export class DataStore {
   }
 
   static _serializeContext(context) {
-    // Deep-clone scoredPlaylist to break shared references with candidatePool.
-    // Without this, JSON.stringify may silently drop tracks that share object refs.
-    let clonedPlaylist = [];
+    let compressedPlaylist = [];
     try {
-      clonedPlaylist = JSON.parse(JSON.stringify(context.scoredPlaylist || []));
+      compressedPlaylist = (context.scoredPlaylist || []).map(item => {
+        const t = item.track || {};
+        return {
+          ...item,
+          track: {
+            id: t.id,
+            name: t.name,
+            uri: t.uri,
+            preview_url: t.preview_url,
+            artists: (t.artists || []).map(a => ({ id: a.id, name: a.name })),
+            album: {
+              id: t.album?.id,
+              name: t.album?.name,
+              images: t.album?.images?.slice(0, 2) || [] // Keep only max 2 image sizes
+            }
+          }
+        };
+      });
     } catch (e) {
-      console.warn('DataStore: scoredPlaylist clone failed, using shallow copy.', e);
-      clonedPlaylist = context.scoredPlaylist || [];
+      console.warn('DataStore: scoredPlaylist compression failed, using shallow copy.', e);
+      compressedPlaylist = context.scoredPlaylist || [];
     }
 
     return {
       sessionIntent: context.sessionIntent,
       playlistName: context.playlistName,
       curatorReflection: context.curatorReflection,
-      scoredPlaylist: clonedPlaylist,
+      scoredPlaylist: compressedPlaylist,
       // Note: blackboard intentionally excluded — too large for localStorage.
       explanations: {
         playlistTitle: context.explanations?.playlistTitle,

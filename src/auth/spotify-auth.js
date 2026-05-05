@@ -194,7 +194,19 @@ function saveTokens(accessToken, refreshToken, expiresIn) {
     refresh_token: refreshToken,
     expires_at:    Date.now() + expiresIn * 1000,
   };
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(auth));
+  try {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(auth));
+  } catch (e) {
+    if (e.name === 'QuotaExceededError' || e.message.includes('quota')) {
+      console.warn('SpotifyAuth: Quota exceeded when saving tokens. Purging library to make room.');
+      localStorage.removeItem('tg_playlist_library');
+      localStorage.removeItem('tg_saved_playlists');
+      localStorage.removeItem('tg_agentic_profile_cache');
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(auth));
+    } else {
+      throw e;
+    }
+  }
 }
 
 /**

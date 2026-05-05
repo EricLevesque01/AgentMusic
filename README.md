@@ -388,14 +388,40 @@ localStorage (via DataStore)
 - Spotify Developer App (free) — [Create one here](https://developer.spotify.com/dashboard)
 - Gemini API Key (free tier available) — [Get one here](https://aistudio.google.com)
 
-### Setup
+### Setup & API Keys
+
+To run Agent Music locally, you **must** supply your own API keys. Because of Spotify's development mode restrictions and LLM token costs, there is no shared public key.
+
+#### 1. Spotify API Key
+Spotify requires all apps in Development Mode to explicitly allowlist users.
+1. Go to the [Spotify Developer Dashboard](https://developer.spotify.com/dashboard) and create an app.
+2. Under App Settings, set the **Redirect URI** to `http://127.0.0.1:5173/`.
+3. Click on **User Management** and add your Spotify email address (and any friends you want to test with, up to 25 users).
+4. Copy your **Client ID** — you will need it below.
+
+#### 2. Gemini API Key (Optional if using Ollama)
+Agent Music uses Google's Gemini models by default because they are incredibly fast and offer a generous free tier.
+1. Go to [Google AI Studio](https://aistudio.google.com/app/apikey).
+2. Click **Create API Key**.
+3. Copy the key — you will need it below.
+
+#### 3. Installation
 
 ```bash
 git clone https://github.com/EricLevesque01/AgentMusic.git
 cd AgentMusic
 npm install
 cp .env.example .env
-# Add your VITE_SPOTIFY_CLIENT_ID and VITE_GEMINI_API_KEY to .env
+```
+
+Open your `.env` file and paste your keys:
+```env
+VITE_SPOTIFY_CLIENT_ID="your_spotify_client_id_here"
+VITE_GEMINI_API_KEY="your_gemini_api_key_here"
+```
+
+Start the dev server:
+```bash
 npm run dev
 ```
 

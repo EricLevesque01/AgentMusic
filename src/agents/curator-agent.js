@@ -431,7 +431,7 @@ Return ONLY valid JSON.`;
     // Add reasons
     playlist = playlist.map(c => ({
       ...c,
-      dominantFactor: reasonsMap[c.track.id] || 'Selected based on your taste profile.'
+      dominantFactor: reasonsMap[c.track.id] || null
     }));
 
     // --- Post-selection verification: enforce hard constraints ---
@@ -453,7 +453,7 @@ Return ONLY valid JSON.`;
         if (usedIds.has(c.track.id)) continue;
         const count = artistCounts[c.artistName] || 0;
         if (count >= params.maxPerArtistNum) continue;
-        playlist.push({ ...c, dominantFactor: c.dominantFactor || 'Added to reach minimum playable length.' });
+        playlist.push({ ...c, dominantFactor: c.dominantFactor || null });
         usedIds.add(c.track.id);
         artistCounts[c.artistName] = count + 1;
       }

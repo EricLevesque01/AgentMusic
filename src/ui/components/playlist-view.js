@@ -30,6 +30,11 @@ export class PlaylistView {
       'selected based on your taste profile',
       'selected for this playlist based on your taste profile',
       'added to reach target playlist length',
+      'added to reach minimum playable length',
+      'added to pad',
+      'added to fill',
+      'padding track',
+      'filler track',
     ];
     return generic.some(g => text.toLowerCase().includes(g));
   }

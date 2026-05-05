@@ -125,7 +125,7 @@ async function init() {
 
     // Start background playlist generation
     const scheduler = new PlaylistScheduler(orchestrator);
-    scheduler.start();
+    // scheduler.start(); // Temporarily disabled for demo
     window.TG.scheduler = scheduler;
 
     // --- Background Profiler Warm-up ---

@@ -275,7 +275,41 @@ export function renderHomePage(container) {
       return;
     }
 
-    // Show loading state
+    // --- Cache-first rendering: show cached suggestions instantly, no skeleton ---
+    const cachedSuggestions = DataStore.getSuggestedArtistsCache();
+    if (cachedSuggestions && cachedSuggestions.length >= 3) {
+      // Render immediately from cache — no loading state shown
+      renderSuggestionRow(suggestionContainer, cachedSuggestions, _handleAction);
+      document.getElementById('refresh-suggestions-btn-loaded')
+        ?.addEventListener('click', () => _triggerRefresh());
+
+      // Revalidate in the background only if the agent would evict this cache anyway
+      // (too many generic reasons → it will regenerate). Otherwise we're done.
+      const genericPatterns = ['fans also listen', 'similar to', 'influenced ', 'member of'];
+      const genericCount = cachedSuggestions.filter(a =>
+        !a.reason || a.reason.length < 15 ||
+        genericPatterns.some(p => a.reason.toLowerCase().startsWith(p))
+      ).length;
+      const needsRevalidation = genericCount > Math.floor(cachedSuggestions.length * 0.4);
+
+      if (needsRevalidation) {
+        // Silently regenerate — crossfade when ready, no visible loading state
+        try {
+          const agent = new SuggestedArtistsAgent();
+          const freshSuggestions = await agent.generate(topArtists, eloRatings, { force: true });
+          if (freshSuggestions.length >= 3) {
+            renderSuggestionRow(suggestionContainer, freshSuggestions, _handleAction);
+            document.getElementById('refresh-suggestions-btn-loaded')
+              ?.addEventListener('click', () => _triggerRefresh());
+          }
+        } catch (e) {
+          // Silent — keep showing cached version
+        }
+      }
+      return;
+    }
+
+    // No cache at all — show skeleton shimmer while we generate
     suggestionContainer.innerHTML = `
       <div class="suggestion-section">
         <div class="suggestion-header" style="display: flex; justify-content: space-between; align-items: center;">

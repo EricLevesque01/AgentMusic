@@ -72,6 +72,14 @@ export class PlaylistScheduler {
   }
 
   /**
+   * Returns true if a generation run is actively in progress right now.
+   * Used by the Home page to decide whether to show the skeleton card.
+   */
+  isCurrentlyRunning() {
+    return this._running === true;
+  }
+
+  /**
    * Single cron tick: purge stale playlists, then generate new ones if needed.
    */
   async _tick() {

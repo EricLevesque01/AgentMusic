@@ -174,10 +174,19 @@ export function renderHomePage(container) {
       gridEl.appendChild(card);
     }
 
-    // If scheduler is running, show skeleton
+    // Show skeleton only if the scheduler is genuinely running right now.
+    // guard against stale `isRunning: true` that gets stuck in localStorage after
+    // a crash or page reload mid-run (which is what causes the permanent ghost card).
     const state = DataStore.getSchedulerState();
-    if (state.isRunning) {
+    const liveScheduler = window.TG?.scheduler;
+    const staleAfterMs = 5 * 60 * 1000; // 5 minutes
+    const isStale = state.lastRunAt && (Date.now() - state.lastRunAt > staleAfterMs);
+    const schedulerActuallyRunning = state.isRunning && !isStale && liveScheduler?.isCurrentlyRunning?.();
+    if (schedulerActuallyRunning) {
       gridEl.appendChild(createSkeletonCard());
+    } else if (state.isRunning && isStale) {
+      // Clean up the stuck flag
+      DataStore.setSchedulerState({ ...state, isRunning: false });
     }
   }
 

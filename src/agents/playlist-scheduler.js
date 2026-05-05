@@ -29,10 +29,10 @@ import { DataStore } from '../data/data-store.js';
 import { UserModel } from './user-model.js';
 
 const MAX_UNLISTENED = 12;        // Keep up to 12 queued playlists (increased for demo)
-const MAX_PER_RUN = 6;            // Generate up to 6 per run
+const MAX_PER_RUN = 1;            // Generate ONLY 1 per run to avoid rate limits/bad data
 const GENERATION_GAP_MS = 5000;
-const MIN_RUN_INTERVAL_MS = 2 * 60 * 1000;    // 2 minutes between runs
-const CRON_INTERVAL_MS    = 15 * 60 * 1000;   // Check every 15 minutes
+const MIN_RUN_INTERVAL_MS = 10 * 1000;        // Allow a run every 10 seconds
+const CRON_INTERVAL_MS    = 45 * 1000;        // Check and generate 1 playlist every 45 seconds
 const STALE_UNLISTENED_MS = 7 * 24 * 60 * 60 * 1000;  // 7 days
 const STALE_LISTENED_MS   = 3 * 24 * 60 * 60 * 1000;  // 3 days
 
